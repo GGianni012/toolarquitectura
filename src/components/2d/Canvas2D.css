@@ -1,0 +1,253 @@
+.canvas-2d-container {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    overflow: hidden;
+    overscroll-behavior: none;
+    background-color: #1a1a2e;
+    touch-action: none;
+}
+
+.infinite-grid-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background-image:
+        linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+        linear-gradient(rgba(255, 255, 255, 0.09) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.09) 1px, transparent 1px);
+}
+
+.reference-layer {
+    position: absolute;
+    z-index: 0;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+}
+
+.reference-layer.unlocked {
+    cursor: grab;
+    border-color: rgba(79, 172, 254, 0.45);
+}
+
+.reference-image {
+    display: block;
+    max-width: none;
+    user-select: none;
+    pointer-events: none;
+}
+
+.svg-walls-layer {
+    position: absolute;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.wall-2d {
+    filter: drop-shadow(0px 2px 4px rgba(0, 0, 0, 0.5));
+}
+
+.snap-guide {
+    stroke: rgba(79, 172, 254, 0.75);
+    stroke-width: 2;
+    stroke-dasharray: 10 8;
+}
+
+.canvas-2d-container.draw-mode {
+    cursor: crosshair;
+}
+
+.canvas-2d-container.panning {
+    cursor: grabbing;
+}
+
+.canvas-2d-container.pan-ready {
+    cursor: grab;
+}
+
+.canvas-help {
+    position: absolute;
+    top: 18px;
+    left: 18px;
+    z-index: 10;
+    padding: 10px 14px;
+    border-radius: 999px;
+    background: rgba(8, 12, 26, 0.78);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.82);
+    font-size: 12px;
+    letter-spacing: 0.01em;
+    backdrop-filter: blur(8px);
+}
+
+.zoom-pan-layer {
+    will-change: transform;
+    /* Optional: can add transition for smoother wheel zooming but it might delay fast scrolls */
+    /* transition: transform 0.05s ease-out; */
+}
+
+.canvas-2d-content {
+    position: absolute;
+    z-index: 2;
+}
+
+.room-2d {
+    position: absolute;
+    border: 4px solid rgba(255, 255, 255, 0.8);
+    /* Walls */
+    opacity: 0.8;
+    cursor: grab;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    transition: box-shadow 0.2s;
+    user-select: none;
+    touch-action: none;
+    /* Required for use-gesture */
+    border-radius: 4px;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.room-2d:hover:not(.disabled) {
+    opacity: 0.9;
+    box-shadow: 0 8px 25px rgba(255, 255, 255, 0.1);
+}
+
+.room-2d:active:not(.disabled) {
+    cursor: grabbing;
+}
+
+.room-2d.disabled {
+    pointer-events: none;
+}
+
+.room-label {
+    color: rgba(255, 255, 255, 0.9);
+    font-weight: bold;
+    font-size: 14px;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+    pointer-events: none;
+    text-align: center;
+    padding: 0 8px;
+}
+
+.room-dimensions {
+    position: absolute;
+    bottom: 8px;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.7);
+    pointer-events: none;
+}
+
+.furniture-2d {
+    position: absolute;
+    cursor: grab;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    backdrop-filter: blur(4px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    user-select: none;
+    touch-action: none;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+}
+
+.stair-2d {
+    position: absolute;
+    border: 2px solid rgba(255, 255, 255, 0.65);
+    border-radius: 12px;
+    background-image: repeating-linear-gradient(
+        -45deg,
+        rgba(255, 255, 255, 0.12),
+        rgba(255, 255, 255, 0.12) 10px,
+        rgba(0, 0, 0, 0.08) 10px,
+        rgba(0, 0, 0, 0.08) 20px
+    );
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 10px;
+    color: #101010;
+    cursor: grab;
+    user-select: none;
+    touch-action: none;
+}
+
+.stair-2d.disabled {
+    pointer-events: none;
+}
+
+.stair-arrow {
+    align-self: flex-end;
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.8);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+}
+
+.stair-label {
+    font-size: 12px;
+    font-weight: 700;
+    color: rgba(10, 15, 30, 0.82);
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+.furniture-2d.disabled {
+    pointer-events: none;
+}
+
+.furniture-2d:active:not(.disabled) {
+    cursor: grabbing;
+}
+
+.resize-handle {
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    background-color: #4facfe;
+    border: 2px solid white;
+    border-radius: 50%;
+    z-index: 10;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+    pointer-events: auto;
+    touch-action: none;
+    transition: transform 0.1s;
+}
+
+.resize-handle.tl {
+    top: -8px;
+    left: -8px;
+    cursor: nw-resize;
+}
+
+.resize-handle.tr {
+    top: -8px;
+    right: -8px;
+    cursor: ne-resize;
+}
+
+.resize-handle.bl {
+    bottom: -8px;
+    left: -8px;
+    cursor: sw-resize;
+}
+
+.resize-handle.br {
+    bottom: -8px;
+    right: -8px;
+    cursor: se-resize;
+}
+
+.resize-handle:hover {
+    transform: scale(1.3);
+}

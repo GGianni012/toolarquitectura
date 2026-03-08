@@ -1,0 +1,147 @@
+.sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    padding: 1rem;
+    width: 250px;
+    height: 100%;
+    overflow-y: auto;
+}
+
+.tool-section h3 {
+    margin-bottom: 0.5rem;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    color: #888;
+}
+
+.section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+    gap: 0.5rem;
+}
+
+.section-header h3 {
+    margin: 0;
+}
+
+.mini-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(79, 172, 254, 0.12);
+    color: #cfe7ff;
+    padding: 0.35rem 0.6rem;
+    border-radius: 999px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.section-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+}
+
+.mini-btn:hover {
+    background: rgba(79, 172, 254, 0.2);
+    border-color: rgba(79, 172, 254, 0.4);
+}
+
+.levels-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.level-card {
+    padding: 0.8rem 0.9rem;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.level-card:hover {
+    border-color: rgba(79, 172, 254, 0.35);
+    transform: translateY(-1px);
+}
+
+.level-card.active {
+    background: linear-gradient(180deg, rgba(79, 172, 254, 0.2), rgba(79, 172, 254, 0.08));
+    border-color: rgba(79, 172, 254, 0.55);
+}
+
+.level-card-main {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.level-card-title {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.level-card-meta {
+    margin-top: 0.35rem;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.75rem;
+}
+
+.icon-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.07);
+    color: rgba(255, 255, 255, 0.8);
+    cursor: pointer;
+}
+
+.tool-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.5rem;
+}
+
+.tool-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem 0.5rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 1px solid transparent;
+}
+
+.tool-card:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.tool-card.active {
+    background: rgba(100, 150, 255, 0.2);
+    border-color: #4a90e2;
+    color: #4a90e2;
+}
+
+.tool-card span {
+    margin-top: 0.5rem;
+    font-size: 0.8rem;
+    text-align: center;
+}

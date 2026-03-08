@@ -1,0 +1,194 @@
+.app-container {
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: radial-gradient(circle at top right, #2a2a4a 0%, #0d0e15 100%);
+    color: white;
+    overflow: hidden;
+}
+
+.main-content {
+    display: flex;
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    height: calc(100vh - 60px);
+    /* Fill remaining space below header */
+}
+
+.canvas-wrapper {
+    flex: 1;
+    position: relative;
+    background: rgba(255, 255, 255, 0.02);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.viewer3d-shell {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+.viewer3d-hud {
+    position: absolute;
+    top: 18px;
+    left: 18px;
+    z-index: 15;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.viewer3d-btn {
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 999px;
+    background: rgba(8, 12, 24, 0.8);
+    color: white;
+    padding: 10px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+}
+
+.viewer3d-chip {
+    padding: 10px 14px;
+    border-radius: 999px;
+    background: rgba(8, 12, 24, 0.62);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.84);
+    font-size: 12px;
+    backdrop-filter: blur(8px);
+}
+
+/* Glassmorphism Styles */
+.glass-panel {
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+}
+
+/* Header adjusted to be more compact for desktop */
+.header {
+    height: 60px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 24px;
+    z-index: 20;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(15, 15, 25, 0.85);
+    /* Darker solid feel */
+}
+
+.header-title {
+    font-size: 20px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: linear-gradient(90deg, #00f2fe 0%, #4facfe 100%);
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.header-floor-pill {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 14px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.88);
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    -webkit-text-fill-color: initial;
+}
+
+.mode-toggle {
+    display: flex;
+    gap: 10px;
+    background: rgba(0, 0, 0, 0.4);
+    padding: 6px;
+    border-radius: 30px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.mode-btn {
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.5);
+    padding: 8px 24px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.mode-btn.active {
+    background: #4facfe;
+    color: white;
+    box-shadow: 0 4px 15px rgba(79, 172, 254, 0.4);
+}
+
+.sidebar {
+    width: 300px;
+    height: 100%;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 30px;
+    z-index: 5;
+}
+
+.tool-section h3 {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: rgba(255, 255, 255, 0.5);
+    margin-bottom: 16px;
+}
+
+.tool-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+}
+
+.tool-card {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 20px 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.tool-card:hover {
+    background: rgba(255, 255, 255, 0.1);
+    transform: translateY(-2px);
+    border-color: rgba(79, 172, 254, 0.5);
+}
+
+.tool-card svg {
+    color: #4facfe;
+}
+
+.tool-card span {
+    font-size: 13px;
+    font-weight: 500;
+}
