@@ -9,7 +9,7 @@ import ControlsGuide from './components/ControlsGuide';
 import './App.css';
 
 function App() {
-    const { mode, selectedElement, rooms, addRoom } = useStore();
+    const { mode, selectedElement, rooms, addRoom, removeElement, setSelectedElement } = useStore();
     const copiedRoomRef = useRef<any>(null);
 
     useEffect(() => {
@@ -20,7 +20,18 @@ function App() {
                 || target?.tagName === 'SELECT'
                 || !!target?.isContentEditable;
 
-            if (isTypingTarget || !(event.metaKey || event.ctrlKey)) {
+            if (isTypingTarget) {
+                return;
+            }
+
+            if ((event.code === 'Delete' || event.code === 'Backspace') && selectedElement) {
+                event.preventDefault();
+                removeElement(selectedElement.id, selectedElement.type);
+                setSelectedElement(null);
+                return;
+            }
+
+            if (!(event.metaKey || event.ctrlKey)) {
                 return;
             }
 
@@ -49,7 +60,7 @@ function App() {
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [addRoom, rooms, selectedElement]);
+    }, [addRoom, removeElement, rooms, selectedElement, setSelectedElement]);
 
     return (
         <div className="app-container">

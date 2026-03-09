@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useDrag } from '@use-gesture/react';
 import { useStore } from '../store/useStore';
 import { GripHorizontal, Lock, Unlock, X } from 'lucide-react';
+import { getRoomEdgeCount, getRoomEdgeLabel, isRoomWallVisible } from '../utils/buildingGeometry';
 import './PropertiesPanel.css';
 
 const PLAN_UNIT_IN_METERS = 0.5;
@@ -310,12 +311,17 @@ export default function PropertiesPanel() {
         switch (type) {
             case 'room':
                 const roomMetrics = element.points?.length ? getPolygonMetrics(element.points) : null;
+                const edgeCount = getRoomEdgeCount(element);
+                const visibleWallsCount = Array.from({ length: edgeCount }, (_, edgeIndex) => edgeIndex)
+                    .filter((edgeIndex) => isRoomWallVisible(element, edgeIndex))
+                    .length;
                 return [
                     { label: 'Origin', value: `${formatPlanMeasure(element.x)}, ${formatPlanMeasure(element.y)}` },
                     { label: 'Width', value: formatPlanMeasure(element.width) },
                     { label: 'Depth', value: formatPlanMeasure(element.height) },
                     { label: 'Rotation', value: `${Math.round(element.rotation || 0)}°` },
                     { label: 'Points', value: `${element.points?.length || 4}` },
+                    { label: 'Walls', value: `${visibleWallsCount}/${edgeCount}` },
                     { label: 'Area', value: `${(roomMetrics ? roomMetrics.area : (element.width * element.height * PLAN_UNIT_IN_METERS * PLAN_UNIT_IN_METERS)).toFixed(2).replace(/\.?0+$/, '')}m²` }
                 ];
             case 'wall':
@@ -499,14 +505,32 @@ export default function PropertiesPanel() {
                                 </div>
                             </div>
                         )}
-                        <div className="property-row">
-                            <label>Room Walls</label>
-                            <button
-                                className={`lock-btn ${element.showWalls === false ? 'locked' : ''}`}
-                                onClick={() => handleChange('showWalls', element.showWalls === false)}
-                            >
-                                {element.showWalls === false ? 'Off' : 'On'}
-                            </button>
+                        <div className="property-row stacked">
+                            <label>Walls By Edge</label>
+                            <div className="wall-toggle-grid">
+                                {Array.from({ length: getRoomEdgeCount(element) }, (_, edgeIndex) => {
+                                    const isVisible = isRoomWallVisible(element, edgeIndex);
+
+                                    return (
+                                        <button
+                                            key={`${element.id}-edge-toggle-${edgeIndex}`}
+                                            type="button"
+                                            className={`wall-toggle-btn ${isVisible ? 'active' : ''}`}
+                                            onClick={() => {
+                                                const hiddenEdges = new Set<number>((element.hiddenWallEdges || []) as number[]);
+                                                if (hiddenEdges.has(edgeIndex)) {
+                                                    hiddenEdges.delete(edgeIndex);
+                                                } else {
+                                                    hiddenEdges.add(edgeIndex);
+                                                }
+                                                handleChange('hiddenWallEdges', Array.from(hiddenEdges).sort((a: number, b: number) => a - b));
+                                            }}
+                                        >
+                                            {getRoomEdgeLabel(element, edgeIndex)}
+                                        </button>
+                                    );
+                                })}
+                            </div>
                         </div>
                     </>
                 )}

@@ -49,6 +49,7 @@ export interface Room extends PositionedElement {
     rotation?: number;
     points?: { x: number; y: number }[];
     showWalls?: boolean;
+    hiddenWallEdges?: number[];
     wallHeight?: number;
 }
 
@@ -210,7 +211,7 @@ export const useStore = create<AppState>()(persist((set) => ({
     activeFloorId: initialFloorId,
 
     rooms: [
-        { id: '1', floorId: initialFloorId, x: 2, y: 2, width: 4, height: 3, rotation: 0, showWalls: true, name: 'Living Room', color: '#88ccff', wallHeight: 3 }
+        { id: '1', floorId: initialFloorId, x: 2, y: 2, width: 4, height: 3, rotation: 0, showWalls: true, hiddenWallEdges: [], name: 'Living Room', color: '#88ccff', wallHeight: 3 }
     ],
     furniture: [
         { id: 'f1', floorId: initialFloorId, type: 'sofa', x: 3, y: 3, rotation: 0 }
@@ -283,6 +284,7 @@ export const useStore = create<AppState>()(persist((set) => ({
             ...room,
             rotation: room.rotation ?? 0,
             showWalls: room.showWalls ?? true,
+            hiddenWallEdges: room.hiddenWallEdges ?? [],
             floorId: room.floorId || state.activeFloorId,
             id: generateId()
         }]
@@ -292,7 +294,8 @@ export const useStore = create<AppState>()(persist((set) => ({
             ...r,
             ...data,
             rotation: data.rotation ?? r.rotation ?? 0,
-            showWalls: data.showWalls ?? r.showWalls ?? true
+            showWalls: data.showWalls ?? r.showWalls ?? true,
+            hiddenWallEdges: data.hiddenWallEdges ?? r.hiddenWallEdges ?? []
         } : r),
         doors: data.floorId
             ? state.doors.map((door) => door.roomId === id ? { ...door, floorId: data.floorId as string } : door)

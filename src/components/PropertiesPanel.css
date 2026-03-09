@@ -273,3 +273,27 @@
     background: rgba(79, 172, 254, 0.22);
     color: white;
 }
+
+.wall-toggle-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+}
+
+.wall-toggle-btn {
+    width: 100%;
+    text-align: left;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.68);
+    padding: 0.7rem 0.8rem;
+    cursor: pointer;
+    transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+}
+
+.wall-toggle-btn.active {
+    border-color: rgba(79, 172, 254, 0.78);
+    background: rgba(79, 172, 254, 0.18);
+    color: #ffffff;
+}

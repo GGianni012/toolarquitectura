@@ -4,6 +4,13 @@ const EPSILON = 0.0001;
 const MIN_DOOR_MARGIN = 0.08;
 const DEFAULT_ROOM_WALL_HEIGHT = 3.2;
 const ROOM_EDGES: RoomEdge[] = ['north', 'south', 'east', 'west'];
+const ROOM_EDGE_INDEX: Record<RoomEdge, number> = {
+    north: 0,
+    east: 1,
+    south: 2,
+    west: 3
+};
+const ROOM_EDGE_LABELS: Array<RoomEdge> = ['north', 'east', 'south', 'west'];
 
 export type Point2D = { x: number; y: number };
 export type Rect2D = { x: number; y: number; width: number; height: number };
@@ -56,6 +63,34 @@ export interface RoomWallSegment {
     height: number;
     contributors: RoomEdgeContribution[];
     visible: boolean;
+}
+
+export function getRoomEdgeCount(room: Room) {
+    return room.points && room.points.length >= 3 ? room.points.length : 4;
+}
+
+export function getRoomHiddenWallEdges(room: Room) {
+    if (room.hiddenWallEdges && room.hiddenWallEdges.length > 0) {
+        return room.hiddenWallEdges;
+    }
+
+    if (room.showWalls === false) {
+        return Array.from({ length: getRoomEdgeCount(room) }, (_, edgeIndex) => edgeIndex);
+    }
+
+    return [];
+}
+
+export function isRoomWallVisible(room: Room, edgeIndex: number) {
+    return !getRoomHiddenWallEdges(room).includes(edgeIndex);
+}
+
+export function getRoomEdgeLabel(room: Room, edgeIndex: number) {
+    if (room.points && room.points.length >= 3) {
+        return `Edge ${edgeIndex + 1}`;
+    }
+
+    return ROOM_EDGE_LABELS[edgeIndex] || `Edge ${edgeIndex + 1}`;
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -185,13 +220,13 @@ export function getRoomEdgeSegment(room: Room, edge: RoomEdge, edgeIndex?: numbe
 
     switch (edge) {
         case 'north':
-            return buildSegment('room', room.id, room.floorId, corners[0], corners[1], edge);
+            return buildSegment('room', room.id, room.floorId, corners[0], corners[1], edge, ROOM_EDGE_INDEX.north);
         case 'south':
-            return buildSegment('room', room.id, room.floorId, corners[3], corners[2], edge);
+            return buildSegment('room', room.id, room.floorId, corners[3], corners[2], edge, ROOM_EDGE_INDEX.south);
         case 'east':
-            return buildSegment('room', room.id, room.floorId, corners[1], corners[2], edge);
+            return buildSegment('room', room.id, room.floorId, corners[1], corners[2], edge, ROOM_EDGE_INDEX.east);
         case 'west':
-            return buildSegment('room', room.id, room.floorId, corners[0], corners[3], edge);
+            return buildSegment('room', room.id, room.floorId, corners[0], corners[3], edge, ROOM_EDGE_INDEX.west);
     }
 }
 
@@ -436,6 +471,8 @@ export function findClosestDoorHost(
         .forEach((room) => {
             if (room.points && room.points.length >= 3) {
                 room.points.forEach((_, edgeIndex) => {
+                    if (!isRoomWallVisible(room, edgeIndex)) return;
+
                     const host = getRoomEdgeSegment(room, 'north', edgeIndex);
                     const projection = projectPointToSegment(point, host.start, host.end);
                     if (!projection || projection.distance > maxDistance) return;
@@ -451,6 +488,8 @@ export function findClosestDoorHost(
             }
 
             ROOM_EDGES.forEach((edge) => {
+                if (!isRoomWallVisible(room, ROOM_EDGE_INDEX[edge])) return;
+
                 const host = getRoomEdgeSegment(room, edge);
                 const projection = projectPointToSegment(point, host.start, host.end);
                 if (!projection || projection.distance > maxDistance) return;
@@ -497,12 +536,13 @@ export function buildRoomWallSegments(rooms: Room[], floors: Floor[]) {
     rooms.forEach((room) => {
         const floor = floorMap.get(room.floorId);
         const height = room.wallHeight || floor?.height || DEFAULT_ROOM_WALL_HEIGHT;
-        if (room.showWalls === false) {
-            return;
-        }
 
         if (room.points && room.points.length >= 3) {
             room.points.forEach((_, edgeIndex) => {
+                if (!isRoomWallVisible(room, edgeIndex)) {
+                    return;
+                }
+
                 const segment = getRoomEdgeSegment(room, 'north', edgeIndex);
                 angledSegments.push({
                     id: `${room.id}:poly:${edgeIndex}`,
@@ -527,6 +567,10 @@ export function buildRoomWallSegments(rooms: Room[], floors: Floor[]) {
 
         ROOM_EDGES.forEach((edge) => {
             const segment = getRoomEdgeSegment(room, edge);
+            const mappedEdgeIndex = segment.edgeIndex ?? ROOM_EDGE_INDEX[edge];
+            if (!isRoomWallVisible(room, mappedEdgeIndex)) {
+                return;
+            }
             const visible = floor
                 ? floor.openSide === 'none' || edge !== floor.openSide
                 : true;
@@ -544,7 +588,7 @@ export function buildRoomWallSegments(rooms: Room[], floors: Floor[]) {
                     contributors: [{
                         roomId: room.id,
                         edge,
-                        edgeIndex: segment.edgeIndex,
+                        edgeIndex: mappedEdgeIndex,
                         height
                     }],
                     visible
@@ -570,6 +614,7 @@ export function buildRoomWallSegments(rooms: Room[], floors: Floor[]) {
                 spanEnd,
                 roomId: room.id,
                 edge,
+                edgeIndex: mappedEdgeIndex,
                 height
             });
 

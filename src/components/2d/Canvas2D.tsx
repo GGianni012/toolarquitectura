@@ -1,7 +1,7 @@
 import { useStore, Room, Wall, Furniture, Door, Cylinder, Surface, Stair, FloorReference } from '../../store/useStore';
 import { useDrag } from '@use-gesture/react';
 import { Sofa, BedDouble, Trees } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
     findBestRoomForRect,
     findClosestDoorHost,
@@ -9,7 +9,9 @@ import {
     fitRectInsideRoom,
     getRectIntersection,
     getRoomBounds,
+    getRoomPolygon,
     getStairOpeningFloorId,
+    isRoomWallVisible,
     resolveDoorPlacement,
     type DoorHostCandidate,
     type Rect2D
@@ -81,6 +83,42 @@ function renderRoomOpenings(openings: Rect2D[], room: Room) {
             }}
         />
     ));
+}
+
+function getRectRoomWallStyles(room: Room): CSSProperties {
+    return {
+        borderTopStyle: isRoomWallVisible(room, 0) ? 'solid' : 'dashed',
+        borderTopColor: isRoomWallVisible(room, 0) ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.28)',
+        borderRightStyle: isRoomWallVisible(room, 1) ? 'solid' : 'dashed',
+        borderRightColor: isRoomWallVisible(room, 1) ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.28)',
+        borderBottomStyle: isRoomWallVisible(room, 2) ? 'solid' : 'dashed',
+        borderBottomColor: isRoomWallVisible(room, 2) ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.28)',
+        borderLeftStyle: isRoomWallVisible(room, 3) ? 'solid' : 'dashed',
+        borderLeftColor: isRoomWallVisible(room, 3) ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.28)'
+    };
+}
+
+function renderPolygonRoomEdges(room: Room, scale: number) {
+    const polygon = getRoomPolygon(room);
+
+    return polygon.map((point, index) => {
+        const nextPoint = polygon[(index + 1) % polygon.length];
+        const isVisible = isRoomWallVisible(room, index);
+
+        return (
+            <line
+                key={`${room.id}-wall-edge-${index}`}
+                x1={point.x * GRID_SIZE}
+                y1={point.y * GRID_SIZE}
+                x2={nextPoint.x * GRID_SIZE}
+                y2={nextPoint.y * GRID_SIZE}
+                stroke={isVisible ? 'rgba(255,255,255,0.82)' : 'rgba(255,255,255,0.28)'}
+                strokeWidth={2 / scale}
+                strokeDasharray={isVisible ? undefined : `${10 / scale} ${8 / scale}`}
+                style={{ pointerEvents: 'none' }}
+            />
+        );
+    });
 }
 
 function getRectCenter(rect: Rect2D) {
@@ -575,6 +613,7 @@ function WallElement({
                 strokeLinecap="round"
                 strokeDasharray={isDrawing ? '10 5' : 'none'}
                 className="wall-2d"
+                style={{ pointerEvents: isDrawing ? 'none' : 'stroke' }}
             />
             {showLabel && (
                 <text
@@ -755,8 +794,7 @@ function RoomElement({
                 boxShadow: isSelected ? '0 0 0 3px #fca5a5' : undefined,
                 transform: `rotate(${room.rotation || 0}deg)`,
                 transformOrigin: 'center center',
-                borderStyle: room.showWalls === false ? 'dashed' : 'solid',
-                borderColor: room.showWalls === false ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.8)'
+                ...getRectRoomWallStyles(room)
             }}
         >
             {renderRoomOpenings(openings, room)}
@@ -1282,11 +1320,11 @@ function PolygonRoomElement({
                 }}
                 points={pointsStr}
                 fill={room.color || 'rgba(255, 184, 184, 0.58)'}
-                stroke={isSelected ? '#fca5a5' : (room.showWalls === false ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.82)')}
-                strokeWidth={isSelected ? 3 / scale : 2 / scale}
-                strokeDasharray={room.showWalls === false ? `${10 / scale} ${8 / scale}` : undefined}
+                stroke={isSelected ? '#fca5a5' : 'rgba(255,255,255,0.12)'}
+                strokeWidth={isSelected ? 2 / scale : 1 / scale}
                 style={{ cursor: interactMode === 'select' ? (room.locked ? 'pointer' : 'grab') : 'default', pointerEvents: interactMode === 'select' ? 'all' : 'none' }}
             />
+            {renderPolygonRoomEdges(room, scale)}
             <text
                 x={centerX}
                 y={centerY}
@@ -1628,7 +1666,7 @@ export default function Canvas2D() {
                     height: Math.max(...ys) - Math.min(...ys),
                     points: drawingSurface.points,
                     rotation: 0,
-                    showWalls: false,
+                    hiddenWallEdges: [],
                     wallHeight: 3,
                     name: `Room ${visibleRooms.length + 1}`,
                     color: '#ffb8b8'
