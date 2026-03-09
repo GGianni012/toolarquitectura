@@ -8,6 +8,7 @@ import {
     fitDoorToHostSegment,
     fitRectInsideRoom,
     getRectIntersection,
+    getRoomBounds,
     getStairOpeningFloorId,
     resolveDoorPlacement,
     type DoorHostCandidate,
@@ -27,6 +28,13 @@ const FLOOR_GHOST_MAX_OPACITY = 0.28;
 type Point = { x: number; y: number };
 type SnapGuide = { orientation: 'vertical' | 'horizontal'; position: number };
 type CandidateMatch = { value: number; delta: number };
+type DistanceGuide = {
+    orientation: 'horizontal' | 'vertical';
+    start: Point;
+    end: Point;
+    distance: number;
+    axis: number;
+};
 
 function clamp(value: number, min: number, max: number) {
     return Math.min(Math.max(value, min), max);
@@ -73,6 +81,129 @@ function renderRoomOpenings(openings: Rect2D[], room: Room) {
             }}
         />
     ));
+}
+
+function getRectCenter(rect: Rect2D) {
+    return {
+        x: rect.x + rect.width / 2,
+        y: rect.y + rect.height / 2
+    };
+}
+
+function getObjectBounds(element: Room | Furniture | Cylinder | Stair | Wall, type: 'room' | 'furniture' | 'cylinder' | 'stair' | 'wall'): Rect2D {
+    switch (type) {
+        case 'room':
+            return getRoomBounds(element as Room);
+        case 'furniture': {
+            const furniture = element as Furniture;
+            return {
+                x: furniture.x,
+                y: furniture.y,
+                width: furniture.width ?? 1,
+                height: furniture.depth ?? 1
+            };
+        }
+        case 'cylinder': {
+            const cylinder = element as Cylinder;
+            return {
+                x: cylinder.x - cylinder.radius,
+                y: cylinder.y - cylinder.radius,
+                width: cylinder.radius * 2,
+                height: cylinder.radius * 2
+            };
+        }
+        case 'stair': {
+            const stair = element as Stair;
+            return {
+                x: stair.x,
+                y: stair.y,
+                width: stair.width,
+                height: stair.height
+            };
+        }
+        case 'wall': {
+            const wall = element as Wall;
+            const minThickness = 0.12;
+            const minX = Math.min(wall.startX, wall.endX);
+            const minY = Math.min(wall.startY, wall.endY);
+            const width = Math.abs(wall.endX - wall.startX);
+            const height = Math.abs(wall.endY - wall.startY);
+            return {
+                x: width <= minThickness ? minX - minThickness / 2 : minX,
+                y: height <= minThickness ? minY - minThickness / 2 : minY,
+                width: Math.max(width, minThickness),
+                height: Math.max(height, minThickness)
+            };
+        }
+    }
+}
+
+function buildDistanceGuides(
+    movingRect: Rect2D,
+    candidates: Array<{ id: string; rect: Rect2D }>
+) {
+    const movingCenter = getRectCenter(movingRect);
+    const guides: DistanceGuide[] = [];
+    const verticalGuides: DistanceGuide[] = [];
+    const horizontalGuides: DistanceGuide[] = [];
+
+    candidates.forEach(({ rect }) => {
+        const overlapY = Math.min(movingRect.y + movingRect.height, rect.y + rect.height) - Math.max(movingRect.y, rect.y);
+        if (overlapY > 0.15) {
+            if (rect.x + rect.width <= movingRect.x) {
+                verticalGuides.push({
+                    orientation: 'horizontal',
+                    start: { x: rect.x + rect.width, y: movingCenter.y },
+                    end: { x: movingRect.x, y: movingCenter.y },
+                    distance: movingRect.x - (rect.x + rect.width),
+                    axis: movingCenter.y
+                });
+            }
+            if (rect.x >= movingRect.x + movingRect.width) {
+                verticalGuides.push({
+                    orientation: 'horizontal',
+                    start: { x: movingRect.x + movingRect.width, y: movingCenter.y },
+                    end: { x: rect.x, y: movingCenter.y },
+                    distance: rect.x - (movingRect.x + movingRect.width),
+                    axis: movingCenter.y
+                });
+            }
+        }
+
+        const overlapX = Math.min(movingRect.x + movingRect.width, rect.x + rect.width) - Math.max(movingRect.x, rect.x);
+        if (overlapX > 0.15) {
+            if (rect.y + rect.height <= movingRect.y) {
+                horizontalGuides.push({
+                    orientation: 'vertical',
+                    start: { x: movingCenter.x, y: rect.y + rect.height },
+                    end: { x: movingCenter.x, y: movingRect.y },
+                    distance: movingRect.y - (rect.y + rect.height),
+                    axis: movingCenter.x
+                });
+            }
+            if (rect.y >= movingRect.y + movingRect.height) {
+                horizontalGuides.push({
+                    orientation: 'vertical',
+                    start: { x: movingCenter.x, y: movingRect.y + movingRect.height },
+                    end: { x: movingCenter.x, y: rect.y },
+                    distance: rect.y - (movingRect.y + movingRect.height),
+                    axis: movingCenter.x
+                });
+            }
+        }
+    });
+
+    const nearestHorizontal = verticalGuides
+        .filter((guide) => guide.distance > 0.01)
+        .sort((a, b) => a.distance - b.distance)[0];
+    const nearestVertical = horizontalGuides
+        .filter((guide) => guide.distance > 0.01)
+        .sort((a, b) => a.distance - b.distance)[0];
+
+    if (nearestHorizontal) guides.push(nearestHorizontal);
+    if (nearestVertical) guides.push(nearestVertical);
+
+    return guides;
 }
 
 function findNearestCandidate(value: number, candidates: number[]): CandidateMatch | null {
@@ -503,13 +634,17 @@ function RoomElement({
     scale,
     rooms,
     setSnapGuides,
-    openings = []
+    openings = [],
+    distanceCandidates,
+    setDistanceGuides
 }: {
     room: Room;
     scale: number;
     rooms: Room[];
     setSnapGuides: (guides: SnapGuide[]) => void;
     openings?: Rect2D[];
+    distanceCandidates: Array<{ id: string; rect: Rect2D }>;
+    setDistanceGuides: (guides: DistanceGuide[]) => void;
 }) {
     const { updateRoom, interactMode, selectedElement, setSelectedElement } = useStore();
     const isSelected = selectedElement?.id === room.id;
@@ -526,6 +661,12 @@ function RoomElement({
         };
         const snapped = snapRoomPlacement(rawRect, rooms, room.id);
         setSnapGuides(snapped.guides);
+        setDistanceGuides(
+            buildDistanceGuides(
+                getRoomBounds({ ...room, x: snapped.x, y: snapped.y }),
+                distanceCandidates.filter((candidate) => candidate.id !== room.id)
+            )
+        );
         updateRoom(room.id, { x: snapped.x, y: snapped.y });
 
         return memo;
@@ -570,6 +711,12 @@ function RoomElement({
 
         const snapped = snapRoomResize(nextRect, corner, rooms, room.id);
         setSnapGuides(snapped.guides);
+        setDistanceGuides(
+            buildDistanceGuides(
+                getRoomBounds({ ...room, ...snapped }),
+                distanceCandidates.filter((candidate) => candidate.id !== room.id)
+            )
+        );
         updateRoom(room.id, snapped);
         return memo;
     }, {
@@ -605,7 +752,9 @@ function RoomElement({
                 width: room.width * GRID_SIZE,
                 height: room.height * GRID_SIZE,
                 backgroundColor: room.color || '#fff',
-                boxShadow: isSelected ? '0 0 0 3px #fca5a5' : undefined
+                boxShadow: isSelected ? '0 0 0 3px #fca5a5' : undefined,
+                transform: `rotate(${room.rotation || 0}deg)`,
+                transformOrigin: 'center center'
             }}
         >
             {renderRoomOpenings(openings, room)}
@@ -635,7 +784,17 @@ function RoomElement({
     );
 }
 
-function FurnitureElement({ item, scale }: { item: Furniture; scale: number }) {
+function FurnitureElement({
+    item,
+    scale,
+    distanceCandidates,
+    setDistanceGuides
+}: {
+    item: Furniture;
+    scale: number;
+    distanceCandidates: Array<{ id: string; rect: Rect2D }>;
+    setDistanceGuides: (guides: DistanceGuide[]) => void;
+}) {
     const { updateFurniture, interactMode, selectedElement, setSelectedElement } = useStore();
     const isSelected = selectedElement?.id === item.id;
     const width = item.width ?? 1;
@@ -645,9 +804,16 @@ function FurnitureElement({ item, scale }: { item: Furniture; scale: number }) {
         if (interactMode !== 'select' || item.locked) return memo;
         if (first || !memo) memo = { x: item.x, y: item.y };
 
-        updateFurniture(item.id, {
+        const nextRect = {
             x: roundUnit(memo.x + (mx / scale) / GRID_SIZE),
-            y: roundUnit(memo.y + (my / scale) / GRID_SIZE)
+            y: roundUnit(memo.y + (my / scale) / GRID_SIZE),
+            width,
+            height: depth
+        };
+        setDistanceGuides(buildDistanceGuides(nextRect, distanceCandidates.filter((candidate) => candidate.id !== item.id)));
+        updateFurniture(item.id, {
+            x: nextRect.x,
+            y: nextRect.y
         });
 
         return memo;
@@ -688,7 +854,17 @@ function FurnitureElement({ item, scale }: { item: Furniture; scale: number }) {
     );
 }
 
-function CylinderElement({ cylinder, scale }: { cylinder: Cylinder; scale: number }) {
+function CylinderElement({
+    cylinder,
+    scale,
+    distanceCandidates,
+    setDistanceGuides
+}: {
+    cylinder: Cylinder;
+    scale: number;
+    distanceCandidates: Array<{ id: string; rect: Rect2D }>;
+    setDistanceGuides: (guides: DistanceGuide[]) => void;
+}) {
     const { updateCylinder, interactMode, selectedElement, setSelectedElement } = useStore();
     const isSelected = selectedElement?.id === cylinder.id;
 
@@ -696,9 +872,20 @@ function CylinderElement({ cylinder, scale }: { cylinder: Cylinder; scale: numbe
         if (interactMode !== 'select' || cylinder.locked) return memo;
         if (first || !memo) memo = { x: cylinder.x, y: cylinder.y };
 
-        updateCylinder(cylinder.id, {
+        const nextCenter = {
             x: roundUnit(memo.x + (mx / scale) / GRID_SIZE),
             y: roundUnit(memo.y + (my / scale) / GRID_SIZE)
+        };
+        const nextRect = {
+            x: nextCenter.x - cylinder.radius,
+            y: nextCenter.y - cylinder.radius,
+            width: cylinder.radius * 2,
+            height: cylinder.radius * 2
+        };
+        setDistanceGuides(buildDistanceGuides(nextRect, distanceCandidates.filter((candidate) => candidate.id !== cylinder.id)));
+        updateCylinder(cylinder.id, {
+            x: nextCenter.x,
+            y: nextCenter.y
         });
 
         return memo;
@@ -821,7 +1008,17 @@ function DoorElement({ door, scale }: { door: Door; scale: number }) {
     );
 }
 
-function StairElement({ stair, scale }: { stair: Stair; scale: number }) {
+function StairElement({
+    stair,
+    scale,
+    distanceCandidates,
+    setDistanceGuides
+}: {
+    stair: Stair;
+    scale: number;
+    distanceCandidates: Array<{ id: string; rect: Rect2D }>;
+    setDistanceGuides: (guides: DistanceGuide[]) => void;
+}) {
     const { floors, rooms, updateStair, interactMode, selectedElement, setSelectedElement } = useStore();
     const isSelected = selectedElement?.id === stair.id;
     const targetFloor = floors.find((floor) => floor.id === stair.targetFloorId);
@@ -836,6 +1033,7 @@ function StairElement({ stair, scale }: { stair: Stair; scale: number }) {
             width: stair.width,
             height: stair.height
         }, rooms, stair.floorId);
+        setDistanceGuides(buildDistanceGuides(nextRect, distanceCandidates.filter((candidate) => candidate.id !== stair.id)));
 
         updateStair(stair.id, {
             x: nextRect.x,
@@ -1006,6 +1204,7 @@ export default function Canvas2D() {
     const [isPanning, setIsPanning] = useState(false);
     const [isSpacePressed, setIsSpacePressed] = useState(false);
     const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
+    const [distanceGuides, setDistanceGuides] = useState<DistanceGuide[]>([]);
     const [doorPreview, setDoorPreview] = useState<DoorHostCandidate | null>(null);
 
     const activeFloor = floors.find((floor) => floor.id === activeFloorId);
@@ -1051,13 +1250,27 @@ export default function Canvas2D() {
     const visibleCylinders = cylinders.filter((cylinder) => cylinder.floorId === activeFloorId);
     const visibleSurfaces = surfaces.filter((surface) => surface.floorId === activeFloorId);
     const visibleStairs = stairs.filter((stair) => stair.floorId === activeFloorId);
+    const distanceCandidates = useMemo(
+        () => [
+            ...visibleRooms.map((room) => ({ id: room.id, rect: getObjectBounds(room, 'room') })),
+            ...visibleFurniture.map((item) => ({ id: item.id, rect: getObjectBounds(item, 'furniture') })),
+            ...visibleCylinders.map((cylinder) => ({ id: cylinder.id, rect: getObjectBounds(cylinder, 'cylinder') })),
+            ...visibleStairs.map((stair) => ({ id: stair.id, rect: getObjectBounds(stair, 'stair') })),
+            ...visibleWalls.map((wall) => ({ id: wall.id, rect: getObjectBounds(wall, 'wall') }))
+        ],
+        [visibleCylinders, visibleFurniture, visibleRooms, visibleStairs, visibleWalls]
+    );
     const roomOpeningsById = useMemo(() => {
         const nextMap = new Map<string, Rect2D[]>();
         const floorOpenings = stairOpeningsByFloor.get(activeFloorId) || [];
 
         visibleRooms.forEach((room) => {
+            if (Math.abs(room.rotation || 0) > 0.01) {
+                nextMap.set(room.id, []);
+                return;
+            }
             const openings = floorOpenings
-                .map((opening) => getRectIntersection(room, opening))
+                .map((opening) => getRectIntersection(getRoomBounds(room), opening))
                 .filter((opening): opening is Rect2D => opening !== null);
             nextMap.set(room.id, openings);
         });
@@ -1078,10 +1291,14 @@ export default function Canvas2D() {
                 const roomOpenings = new Map<string, Rect2D[]>();
 
                 floorRooms.forEach((room) => {
+                    if (Math.abs(room.rotation || 0) > 0.01) {
+                        roomOpenings.set(room.id, []);
+                        return;
+                    }
                     roomOpenings.set(
                         room.id,
                         floorOpenings
-                            .map((opening) => getRectIntersection(room, opening))
+                            .map((opening) => getRectIntersection(getRoomBounds(room), opening))
                             .filter((opening): opening is Rect2D => opening !== null)
                     );
                 });
@@ -1110,6 +1327,7 @@ export default function Canvas2D() {
     const clearTransientState = () => {
         setIsPanning(false);
         setSnapGuides([]);
+        setDistanceGuides([]);
         setDoorPreview(null);
     };
 
@@ -1272,6 +1490,7 @@ export default function Canvas2D() {
         }
 
         setSnapGuides([]);
+        setDistanceGuides([]);
 
         if (interactMode !== 'place_door') {
             setDoorPreview(null);
@@ -1433,7 +1652,9 @@ export default function Canvas2D() {
                                             top: room.y * GRID_SIZE,
                                             width: room.width * GRID_SIZE,
                                             height: room.height * GRID_SIZE,
-                                            backgroundColor: room.color || '#dbe7ff'
+                                            backgroundColor: room.color || '#dbe7ff',
+                                            transform: `rotate(${room.rotation || 0}deg)`,
+                                            transformOrigin: 'center center'
                                         }}
                                     >
                                         {renderRoomOpenings(ghostFloor.roomOpenings.get(room.id) || [], room)}
@@ -1513,6 +1734,27 @@ export default function Canvas2D() {
                         )
                     ))}
 
+                    {distanceGuides.map((guide, index) => (
+                        <g key={`distance-guide-${guide.orientation}-${index}`} style={{ pointerEvents: 'none' }}>
+                            <line
+                                x1={guide.start.x * GRID_SIZE}
+                                y1={guide.start.y * GRID_SIZE}
+                                x2={guide.end.x * GRID_SIZE}
+                                y2={guide.end.y * GRID_SIZE}
+                                className="distance-guide-line"
+                            />
+                            <text
+                                x={((guide.start.x + guide.end.x) / 2) * GRID_SIZE}
+                                y={((guide.start.y + guide.end.y) / 2) * GRID_SIZE - getAdaptiveTextSize(scale, 8)}
+                                className="distance-guide-label"
+                                fontSize={getAdaptiveTextSize(scale, 11)}
+                                textAnchor="middle"
+                            >
+                                {toMeters(guide.distance)}
+                            </text>
+                        </g>
+                    ))}
+
                     {visibleSurfaces.map((surface) => (
                         <SurfaceElement key={surface.id} surface={surface} scale={scale} />
                     ))}
@@ -1569,16 +1811,36 @@ export default function Canvas2D() {
                             rooms={visibleRooms}
                             setSnapGuides={setSnapGuides}
                             openings={roomOpeningsById.get(room.id) || []}
+                            distanceCandidates={distanceCandidates}
+                            setDistanceGuides={setDistanceGuides}
                         />
                     ))}
                     {visibleCylinders.map((cylinder) => (
-                        <CylinderElement key={cylinder.id} cylinder={cylinder} scale={scale} />
+                        <CylinderElement
+                            key={cylinder.id}
+                            cylinder={cylinder}
+                            scale={scale}
+                            distanceCandidates={distanceCandidates}
+                            setDistanceGuides={setDistanceGuides}
+                        />
                     ))}
                     {visibleStairs.map((stair) => (
-                        <StairElement key={stair.id} stair={stair} scale={scale} />
+                        <StairElement
+                            key={stair.id}
+                            stair={stair}
+                            scale={scale}
+                            distanceCandidates={distanceCandidates}
+                            setDistanceGuides={setDistanceGuides}
+                        />
                     ))}
                     {visibleFurniture.map((item) => (
-                        <FurnitureElement key={item.id} item={item} scale={scale} />
+                        <FurnitureElement
+                            key={item.id}
+                            item={item}
+                            scale={scale}
+                            distanceCandidates={distanceCandidates}
+                            setDistanceGuides={setDistanceGuides}
+                        />
                     ))}
                     {visibleDoors.map((door) => (
                         <DoorElement key={door.id} door={door} scale={scale} />

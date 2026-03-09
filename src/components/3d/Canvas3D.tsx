@@ -7,6 +7,8 @@ import * as THREE from 'three';
 import {
     buildRoomWallSegments,
     getRectIntersection,
+    getRoomBounds,
+    getRoomCorners,
     getStairOpeningFloorId,
     getWallSegment,
     resolveDoorPlacement,
@@ -28,6 +30,19 @@ type WallOpening = {
     endDistance: number;
     doorHeight: number;
 };
+
+function projectDistanceOnSegment(
+    segmentStart: { x: number; y: number },
+    segmentEnd: { x: number; y: number },
+    point: { x: number; y: number }
+) {
+    const dx = segmentEnd.x - segmentStart.x;
+    const dy = segmentEnd.y - segmentStart.y;
+    const length = Math.hypot(dx, dy);
+    if (length <= 0.0001) return 0;
+
+    return ((point.x - segmentStart.x) * dx + (point.y - segmentStart.y) * dy) / length;
+}
 
 function normalizeWallOpenings(openings: WallOpening[], length: number, height: number) {
     const prepared = openings
@@ -184,9 +199,12 @@ function buildSceneBounds(
         const floor = floorMap.get(room.floorId);
         if (!floor) return;
         const height = room.wallHeight || floor.height || DEFAULT_LEVEL_HEIGHT;
+        const corners = getRoomCorners(room);
+        const xs = corners.map((corner) => corner.x);
+        const zs = corners.map((corner) => corner.y);
         expand(
-            new THREE.Vector3(room.x, floor.elevation, room.y),
-            new THREE.Vector3(room.x + room.width, floor.elevation + height, room.y + room.height)
+            new THREE.Vector3(Math.min(...xs), floor.elevation, Math.min(...zs)),
+            new THREE.Vector3(Math.max(...xs), floor.elevation + height, Math.max(...zs))
         );
     });
 
@@ -265,15 +283,21 @@ function buildSceneBounds(
 }
 
 function Room3D({ room, floor, openings = [] }: { room: Room; floor: Floor; openings?: Rect2D[] }) {
+    const rotationRadians = -THREE.MathUtils.degToRad(room.rotation || 0);
     const floorPatches = useMemo(
         () => subtractRectHolesFromRect({ x: room.x, y: room.y, width: room.width, height: room.height }, openings),
         [openings, room.height, room.width, room.x, room.y]
     );
+    const canUseOpenings = Math.abs(room.rotation || 0) <= 0.01;
 
     return (
         <>
-            {floorPatches.map((patch, index) => (
-                <group key={`${room.id}-patch-${index}`} position={[patch.x + patch.width / 2, floor.elevation, patch.y + patch.height / 2]}>
+            {(canUseOpenings ? floorPatches : [{ x: room.x, y: room.y, width: room.width, height: room.height }]).map((patch, index) => (
+                <group
+                    key={`${room.id}-patch-${index}`}
+                    position={[patch.x + patch.width / 2, floor.elevation, patch.y + patch.height / 2]}
+                    rotation={[0, canUseOpenings ? 0 : rotationRadians, 0]}
+                >
                     <Box args={[patch.width, FLOOR_THICKNESS, patch.height]} position={[0, -FLOOR_THICKNESS / 2, 0]} castShadow receiveShadow>
                         <meshStandardMaterial color={room.color || '#dddddd'} roughness={0.85} />
                     </Box>
@@ -577,11 +601,16 @@ function SceneNavigation({
 }
 
 export default function Canvas3D() {
-    const { floors, rooms, furniture, walls, cylinders, doors, surfaces, stairs } = useStore();
+    const { floors, rooms, furniture, walls, cylinders, doors, surfaces, stairs, activeFloorId, setActiveFloor, setVisibleFloors } = useStore();
     const [fitRequestToken, setFitRequestToken] = useState(0);
     const controlsRef = useRef<OrbitControlsImpl>(null);
 
+    const sortedFloors = useMemo(
+        () => [...floors].sort((a, b) => a.elevation - b.elevation),
+        [floors]
+    );
     const visibleFloors = floors.filter((floor) => floor.visible);
+    const visibleFloorIds = visibleFloors.map((floor) => floor.id);
     const floorMap = useMemo(
         () => new Map(visibleFloors.map((floor) => [floor.id, floor])),
         [visibleFloors]
@@ -630,8 +659,12 @@ export default function Canvas3D() {
         const nextMap = new Map<string, Rect2D[]>();
 
         visibleRooms.forEach((room) => {
+            if (Math.abs(room.rotation || 0) > 0.01) {
+                nextMap.set(room.id, []);
+                return;
+            }
             const openings = (stairOpeningsByFloor.get(room.floorId) || [])
-                .map((opening) => getRectIntersection(room, opening))
+                .map((opening) => getRectIntersection(getRoomBounds(room), opening))
                 .filter((opening): opening is Rect2D => opening !== null);
             nextMap.set(room.id, openings);
         });
@@ -672,20 +705,17 @@ export default function Canvas3D() {
                 );
                 if (!matchesContributor) return;
 
-                const segmentStart = segment.orientation === 'horizontal' ? Math.min(segment.start.x, segment.end.x) : Math.min(segment.start.y, segment.end.y);
-                const segmentEnd = segment.orientation === 'horizontal' ? Math.max(segment.start.x, segment.end.x) : Math.max(segment.start.y, segment.end.y);
-                const hostStart = placement.orientation === 'horizontal' ? Math.min(placement.start.x, placement.end.x) : Math.min(placement.start.y, placement.end.y);
-                const openingStart = hostStart + placement.startDistance;
-                const openingEnd = hostStart + placement.endDistance;
-                const overlapStart = Math.max(openingStart, segmentStart);
-                const overlapEnd = Math.min(openingEnd, segmentEnd);
+                const segmentStartDistance = projectDistanceOnSegment(placement.start, placement.end, segment.start);
+                const segmentEndDistance = projectDistanceOnSegment(placement.start, placement.end, segment.end);
+                const overlapStart = Math.max(placement.startDistance, Math.min(segmentStartDistance, segmentEndDistance));
+                const overlapEnd = Math.min(placement.endDistance, Math.max(segmentStartDistance, segmentEndDistance));
 
                 if (overlapEnd - overlapStart <= 0.04) return;
 
                 const openings = nextMap.get(segment.id) || [];
                 openings.push({
-                    startDistance: overlapStart - segmentStart,
-                    endDistance: overlapEnd - segmentStart,
+                    startDistance: overlapStart - Math.min(segmentStartDistance, segmentEndDistance),
+                    endDistance: overlapEnd - Math.min(segmentStartDistance, segmentEndDistance),
                     doorHeight: placement.doorHeight
                 });
                 nextMap.set(segment.id, openings);
@@ -708,13 +738,12 @@ export default function Canvas3D() {
                 );
                 if (!matchesContributor) return false;
 
-                const segmentStart = segment.orientation === 'horizontal' ? Math.min(segment.start.x, segment.end.x) : Math.min(segment.start.y, segment.end.y);
-                const segmentEnd = segment.orientation === 'horizontal' ? Math.max(segment.start.x, segment.end.x) : Math.max(segment.start.y, segment.end.y);
-                const hostStart = placement.orientation === 'horizontal' ? Math.min(placement.start.x, placement.end.x) : Math.min(placement.start.y, placement.end.y);
-                const openingStart = hostStart + placement.startDistance;
-                const openingEnd = hostStart + placement.endDistance;
+                const segmentStartDistance = projectDistanceOnSegment(placement.start, placement.end, segment.start);
+                const segmentEndDistance = projectDistanceOnSegment(placement.start, placement.end, segment.end);
+                const overlapStart = Math.max(placement.startDistance, Math.min(segmentStartDistance, segmentEndDistance));
+                const overlapEnd = Math.min(placement.endDistance, Math.max(segmentStartDistance, segmentEndDistance));
 
-                return Math.min(openingEnd, segmentEnd) - Math.max(openingStart, segmentStart) > 0.04;
+                return overlapEnd - overlapStart > 0.04;
             });
         }),
         [roomWallSegments, visibleDoors]
@@ -730,6 +759,17 @@ export default function Canvas3D() {
         ? Math.min(...visibleFloors.map((floor) => floor.elevation))
         : 0;
     const planeSize = Math.max(sceneSize.x, sceneSize.z, 40) * 2.4;
+    const showAllFloors = () => setVisibleFloors(sortedFloors.map((floor) => floor.id));
+    const toggleFloorVisibility = (floorId: string) => {
+        const nextVisibleIds = visibleFloorIds.includes(floorId)
+            ? visibleFloorIds.filter((id) => id !== floorId)
+            : [...visibleFloorIds, floorId];
+        setVisibleFloors(nextVisibleIds);
+    };
+    const isolateFloor = (floorId: string) => {
+        setActiveFloor(floorId);
+        setVisibleFloors([floorId]);
+    };
 
     return (
         <div className="viewer3d-shell">
@@ -738,6 +778,40 @@ export default function Canvas3D() {
                     Fit View (F)
                 </button>
                 <div className="viewer3d-chip">WASD / Arrows move</div>
+            </div>
+            <div className="viewer3d-level-strip glass-panel">
+                <button className="viewer3d-level-btn" onClick={showAllFloors}>
+                    Show all
+                </button>
+                {sortedFloors.map((floor) => {
+                    const isVisible = visibleFloorIds.includes(floor.id);
+                    const isActive = floor.id === activeFloorId;
+
+                    return (
+                        <div key={floor.id} className={`viewer3d-level-pill ${isActive ? 'active' : ''} ${isVisible ? '' : 'muted'}`}>
+                            <button
+                                className="viewer3d-level-name"
+                                onClick={() => setActiveFloor(floor.id)}
+                            >
+                                {floor.name}
+                            </button>
+                            <button
+                                className={`viewer3d-level-toggle ${isVisible ? 'on' : 'off'}`}
+                                onClick={() => toggleFloorVisibility(floor.id)}
+                                title={isVisible ? 'Hide this floor' : 'Show this floor'}
+                            >
+                                {isVisible ? 'On' : 'Off'}
+                            </button>
+                            <button
+                                className="viewer3d-level-solo"
+                                onClick={() => isolateFloor(floor.id)}
+                                title="Show only this floor"
+                            >
+                                Solo
+                            </button>
+                        </div>
+                    );
+                })}
             </div>
 
             <Canvas shadows camera={{ position: [11, 8, 12], fov: 45 }}>

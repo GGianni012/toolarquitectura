@@ -54,6 +54,72 @@
     backdrop-filter: blur(8px);
 }
 
+.viewer3d-level-strip {
+    position: absolute;
+    top: 72px;
+    left: 18px;
+    z-index: 15;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    max-width: min(960px, calc(100% - 40px));
+    padding: 12px;
+    border-radius: 18px;
+    background: rgba(8, 12, 24, 0.76);
+}
+
+.viewer3d-level-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.viewer3d-level-pill.active {
+    border-color: rgba(79, 172, 254, 0.65);
+    background: rgba(79, 172, 254, 0.18);
+}
+
+.viewer3d-level-pill.muted {
+    opacity: 0.68;
+}
+
+.viewer3d-level-btn,
+.viewer3d-level-name,
+.viewer3d-level-toggle,
+.viewer3d-level-solo {
+    border: none;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.88);
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.viewer3d-level-btn,
+.viewer3d-level-toggle,
+.viewer3d-level-solo {
+    border-radius: 999px;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.viewer3d-level-name {
+    font-weight: 700;
+}
+
+.viewer3d-level-toggle.on {
+    background: rgba(74, 222, 128, 0.18);
+    color: #b5f4c2;
+}
+
+.viewer3d-level-toggle.off {
+    background: rgba(239, 68, 68, 0.16);
+    color: #ffb4b4;
+}
+
 .viewer3d-chip {
     padding: 10px 14px;
     border-radius: 999px;

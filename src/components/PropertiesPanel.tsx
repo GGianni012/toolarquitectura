@@ -1,5 +1,7 @@
+import { useState } from 'react';
+import { useDrag } from '@use-gesture/react';
 import { useStore } from '../store/useStore';
-import { Lock, Unlock, X } from 'lucide-react';
+import { GripHorizontal, Lock, Unlock, X } from 'lucide-react';
 import './PropertiesPanel.css';
 
 const PLAN_UNIT_IN_METERS = 0.5;
@@ -69,6 +71,23 @@ export default function PropertiesPanel() {
         updateRoom, updateFurniture, updateWall, updateDoor, updateCylinder, updateSurface, updateStair,
         removeElement
     } = useStore();
+    const [panelOffset, setPanelOffset] = useState({ x: 0, y: 0 });
+    const dragBind = useDrag(({ movement: [mx, my], first, memo }) => {
+        if (first || !memo) {
+            memo = { x: panelOffset.x, y: panelOffset.y };
+        }
+
+        setPanelOffset({
+            x: memo.x + mx,
+            y: memo.y + my
+        });
+
+        return memo;
+    });
+    const dragHandleProps: any = dragBind();
+    const panelStyle = {
+        transform: `translate(${panelOffset.x}px, ${panelOffset.y}px)`
+    };
 
     const activeFloor = floors.find((floor) => floor.id === activeFloorId);
 
@@ -93,9 +112,15 @@ export default function PropertiesPanel() {
         };
 
         return (
-            <div className="properties-panel">
-                <div className="properties-header">
+            <div className="properties-panel" style={panelStyle}>
+                <div className="properties-header draggable" {...dragHandleProps}>
                     <h3>{activeFloor.name} Settings</h3>
+                    <div className="properties-header-tools">
+                        <span className="properties-drag-pill">
+                            <GripHorizontal size={14} />
+                            Move
+                        </span>
+                    </div>
                 </div>
 
                 <div className="properties-content">
@@ -286,6 +311,7 @@ export default function PropertiesPanel() {
                     { label: 'Origin', value: `${formatPlanMeasure(element.x)}, ${formatPlanMeasure(element.y)}` },
                     { label: 'Width', value: formatPlanMeasure(element.width) },
                     { label: 'Depth', value: formatPlanMeasure(element.height) },
+                    { label: 'Rotation', value: `${Math.round(element.rotation || 0)}°` },
                     { label: 'Area', value: `${(element.width * element.height * PLAN_UNIT_IN_METERS * PLAN_UNIT_IN_METERS).toFixed(2).replace(/\.?0+$/, '')}m²` }
                 ];
             case 'wall':
@@ -306,7 +332,8 @@ export default function PropertiesPanel() {
                     { label: 'Origin', value: `${formatPlanMeasure(element.x)}, ${formatPlanMeasure(element.y)}` },
                     { label: 'Width', value: formatMeters(element.width !== undefined ? element.width : 1) },
                     { label: 'Depth', value: formatMeters(element.depth !== undefined ? element.depth : 1) },
-                    { label: 'Height', value: formatMeters(element.height !== undefined ? element.height : 0.5) }
+                    { label: 'Height', value: formatMeters(element.height !== undefined ? element.height : 0.5) },
+                    { label: 'Rotation', value: `${Math.round(element.rotation || 0)}°` }
                 ];
             case 'cylinder':
                 return [
@@ -334,12 +361,22 @@ export default function PropertiesPanel() {
     })();
 
     return (
-        <div className="properties-panel">
-            <div className="properties-header">
+        <div className="properties-panel" style={panelStyle}>
+            <div className="properties-header draggable" {...dragHandleProps}>
                 <h3>{element.name || type.charAt(0).toUpperCase() + type.slice(1)} Properties</h3>
-                <button className="icon-btn" onClick={() => setSelectedElement(null)}>
-                    <X size={18} />
-                </button>
+                <div className="properties-header-tools">
+                    <span className="properties-drag-pill">
+                        <GripHorizontal size={14} />
+                        Move
+                    </span>
+                    <button
+                        className="icon-btn"
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={() => setSelectedElement(null)}
+                    >
+                        <X size={18} />
+                    </button>
+                </div>
             </div>
 
             <div className="properties-content">
@@ -398,6 +435,58 @@ export default function PropertiesPanel() {
                     </div>
                 )}
 
+                {type === 'room' && (
+                    <>
+                        <div className="property-row">
+                            <label>X</label>
+                            <input
+                                type="number"
+                                step="0.01"
+                                value={element.x}
+                                onChange={(e) => handleChange('x', parseFloat(e.target.value) || 0)}
+                            />
+                        </div>
+                        <div className="property-row">
+                            <label>Y</label>
+                            <input
+                                type="number"
+                                step="0.01"
+                                value={element.y}
+                                onChange={(e) => handleChange('y', parseFloat(e.target.value) || 0)}
+                            />
+                        </div>
+                        <div className="property-row">
+                            <label>Width</label>
+                            <input
+                                type="number"
+                                step="0.01"
+                                min="1"
+                                value={element.width}
+                                onChange={(e) => handleChange('width', parseFloat(e.target.value) || 1)}
+                            />
+                        </div>
+                        <div className="property-row">
+                            <label>Depth</label>
+                            <input
+                                type="number"
+                                step="0.01"
+                                min="1"
+                                value={element.height}
+                                onChange={(e) => handleChange('height', parseFloat(e.target.value) || 1)}
+                            />
+                        </div>
+                        <div className="property-row">
+                            <label>Rotation</label>
+                            <input
+                                type="number"
+                                step="1"
+                                value={element.rotation || 0}
+                                onChange={(e) => handleChange('rotation', parseFloat(e.target.value) || 0)}
+                            />
+                        </div>
+                    </>
+                )}
+
                 {/* 3D Wall Height / Extrusion */}
                 {(type === 'room' || type === 'cylinder' || type === 'wall') && (
                     <div className="property-row">
@@ -414,21 +503,59 @@ export default function PropertiesPanel() {
 
                 {/* Radius for Cylinders */}
                 {type === 'cylinder' && (
-                    <div className="property-row">
-                        <label>Radius (m)</label>
-                        <input
-                            type="number"
-                            step="0.1"
-                            min="0.5"
-                            value={element.radius || 2}
-                            onChange={(e) => handleChange('radius', parseFloat(e.target.value))}
-                        />
-                    </div>
+                    <>
+                        <div className="property-row">
+                            <label>Center X</label>
+                            <input
+                                type="number"
+                                step="0.01"
+                                value={element.x}
+                                onChange={(e) => handleChange('x', parseFloat(e.target.value) || 0)}
+                            />
+                        </div>
+                        <div className="property-row">
+                            <label>Center Y</label>
+                            <input
+                                type="number"
+                                step="0.01"
+                                value={element.y}
+                                onChange={(e) => handleChange('y', parseFloat(e.target.value) || 0)}
+                            />
+                        </div>
+                        <div className="property-row">
+                            <label>Radius (m)</label>
+                            <input
+                                type="number"
+                                step="0.1"
+                                min="0.5"
+                                value={element.radius || 2}
+                                onChange={(e) => handleChange('radius', parseFloat(e.target.value))}
+                            />
+                        </div>
+                    </>
                 )}
 
                 {/* Altitude for Furniture */}
                 {type === 'furniture' && (
                     <>
+                        <div className="property-row">
+                            <label>X</label>
+                            <input
+                                type="number"
+                                step="0.01"
+                                value={element.x}
+                                onChange={(e) => handleChange('x', parseFloat(e.target.value) || 0)}
+                            />
+                        </div>
+                        <div className="property-row">
+                            <label>Y</label>
+                            <input
+                                type="number"
+                                step="0.01"
+                                value={element.y}
+                                onChange={(e) => handleChange('y', parseFloat(e.target.value) || 0)}
+                            />
+                        </div>
                         <div className="property-row">
                             <label>Width</label>
                             <input
@@ -457,6 +584,15 @@ export default function PropertiesPanel() {
                                 min="0.2"
                                 value={element.height !== undefined ? element.height : 0.5}
                                 onChange={(e) => handleChange('height', parseFloat(e.target.value))}
+                            />
+                        </div>
+                        <div className="property-row">
+                            <label>Rotation</label>
+                            <input
+                                type="number"
+                                step="1"
+                                value={element.rotation || 0}
+                                onChange={(e) => handleChange('rotation', parseFloat(e.target.value) || 0)}
                             />
                         </div>
                         <div className="property-row">
@@ -539,6 +675,24 @@ export default function PropertiesPanel() {
 
                 {type === 'stair' && (
                     <>
+                        <div className="property-row">
+                            <label>X</label>
+                            <input
+                                type="number"
+                                step="0.01"
+                                value={element.x}
+                                onChange={(e) => handleChange('x', parseFloat(e.target.value) || 0)}
+                            />
+                        </div>
+                        <div className="property-row">
+                            <label>Y</label>
+                            <input
+                                type="number"
+                                step="0.01"
+                                value={element.y}
+                                onChange={(e) => handleChange('y', parseFloat(e.target.value) || 0)}
+                            />
+                        </div>
                         <div className="property-row stacked">
                             <label>Target Level</label>
                             <FloorChoiceGroup
@@ -575,6 +729,57 @@ export default function PropertiesPanel() {
                                 min="2"
                                 value={element.height}
                                 onChange={(e) => handleChange('height', parseFloat(e.target.value) || 2)}
+                            />
+                        </div>
+                    </>
+                )}
+
+                {type === 'wall' && (
+                    <>
+                        <div className="property-row">
+                            <label>Start X</label>
+                            <input
+                                type="number"
+                                step="0.01"
+                                value={element.startX}
+                                onChange={(e) => handleChange('startX', parseFloat(e.target.value) || 0)}
+                            />
+                        </div>
+                        <div className="property-row">
+                            <label>Start Y</label>
+                            <input
+                                type="number"
+                                step="0.01"
+                                value={element.startY}
+                                onChange={(e) => handleChange('startY', parseFloat(e.target.value) || 0)}
+                            />
+                        </div>
+                        <div className="property-row">
+                            <label>End X</label>
+                            <input
+                                type="number"
+                                step="0.01"
+                                value={element.endX}
+                                onChange={(e) => handleChange('endX', parseFloat(e.target.value) || 0)}
+                            />
+                        </div>
+                        <div className="property-row">
+                            <label>End Y</label>
+                            <input
+                                type="number"
+                                step="0.01"
+                                value={element.endY}
+                                onChange={(e) => handleChange('endY', parseFloat(e.target.value) || 0)}
+                            />
+                        </div>
+                        <div className="property-row">
+                            <label>Thickness</label>
+                            <input
+                                type="number"
+                                step="0.01"
+                                min="0.05"
+                                value={element.thickness || 0.18}
+                                onChange={(e) => handleChange('thickness', parseFloat(e.target.value) || 0.18)}
                             />
                         </div>
                     </>

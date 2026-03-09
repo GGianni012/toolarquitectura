@@ -46,6 +46,7 @@ export interface Room extends PositionedElement {
     y: number;
     width: number;
     height: number;
+    rotation?: number;
     wallHeight?: number;
 }
 
@@ -138,6 +139,7 @@ interface AppState {
     toggleMode: () => void;
     setSelectedElement: (element: { id: string, type: ElementType } | null) => void;
     setActiveFloor: (floorId: string) => void;
+    setVisibleFloors: (floorIds: string[]) => void;
     undo: () => void;
 
     addFloor: (floor?: Partial<Omit<Floor, 'id'>>) => void;
@@ -205,7 +207,7 @@ export const useStore = create<AppState>()(persist((set) => ({
     activeFloorId: initialFloorId,
 
     rooms: [
-        { id: '1', floorId: initialFloorId, x: 2, y: 2, width: 4, height: 3, name: 'Living Room', color: '#88ccff', wallHeight: 3 }
+        { id: '1', floorId: initialFloorId, x: 2, y: 2, width: 4, height: 3, rotation: 0, name: 'Living Room', color: '#88ccff', wallHeight: 3 }
     ],
     furniture: [
         { id: 'f1', floorId: initialFloorId, type: 'sofa', x: 3, y: 3, rotation: 0 }
@@ -223,6 +225,15 @@ export const useStore = create<AppState>()(persist((set) => ({
     toggleMode: () => set((state) => ({ mode: state.mode === '2D' ? '3D' : '2D' })),
     setSelectedElement: (element) => set({ selectedElement: element }),
     setActiveFloor: (activeFloorId) => set({ activeFloorId, selectedElement: null }),
+    setVisibleFloors: (floorIds) => set((state) => {
+        const visibleSet = new Set(floorIds.length > 0 ? floorIds : [state.activeFloorId]);
+        return withHistory(state, {
+            floors: state.floors.map((floor) => ({
+                ...floor,
+                visible: visibleSet.has(floor.id)
+            }))
+        });
+    }),
     undo: () => set((state) => {
         const previous = state.history[state.history.length - 1];
         if (!previous) return state;
@@ -265,10 +276,10 @@ export const useStore = create<AppState>()(persist((set) => ({
     })),
 
     addRoom: (room) => set((state) => withHistory(state, {
-        rooms: [...state.rooms, { ...room, floorId: room.floorId || state.activeFloorId, id: generateId() }]
+        rooms: [...state.rooms, { ...room, rotation: room.rotation ?? 0, floorId: room.floorId || state.activeFloorId, id: generateId() }]
     })),
     updateRoom: (id, data) => set((state) => withHistory(state, {
-        rooms: state.rooms.map(r => r.id === id ? { ...r, ...data } : r),
+        rooms: state.rooms.map(r => r.id === id ? { ...r, ...data, rotation: data.rotation ?? r.rotation ?? 0 } : r),
         doors: data.floorId
             ? state.doors.map((door) => door.roomId === id ? { ...door, floorId: data.floorId as string } : door)
             : state.doors
