@@ -18,6 +18,7 @@ import {
     type Rect2D,
     type RoomWallSegment
 } from '../../utils/buildingGeometry';
+import { getFurniturePreset } from '../../utils/furnitureCatalog';
 
 const DEFAULT_LEVEL_HEIGHT = 3.2;
 const WALL_THICKNESS = 0.18;
@@ -231,15 +232,10 @@ function buildSceneBounds(
     furniture.forEach((item) => {
         const floor = floorMap.get(item.floorId);
         if (!floor) return;
-
-        let fallbackSize: [number, number, number] = [0.8, 0.5, 0.8];
-        if (item.type === 'sofa') fallbackSize = [2, 0.6, 0.9];
-        if (item.type === 'bed') fallbackSize = [1.6, 0.4, 2];
-        if (item.type === 'plant') fallbackSize = [0.5, 1.2, 0.5];
-
-        const width = item.width ?? fallbackSize[0];
-        const height = item.height ?? fallbackSize[1];
-        const depth = item.depth ?? fallbackSize[2];
+        const preset = getFurniturePreset(item.type);
+        const width = item.width ?? preset.width;
+        const height = item.height ?? preset.height;
+        const depth = item.depth ?? preset.depth;
         const altitude = item.altitude || 0;
 
         expand(
@@ -455,37 +451,413 @@ function Cylinder3D({ cylinder, floor }: { cylinder: Cylinder; floor: Floor }) {
 
 function Furniture3D({ item, floor }: { item: Furniture; floor: Floor }) {
     const { setActiveFloor, setSelectedElement } = useStore();
-    let color = '#ccc';
-    let size: [number, number, number] = [0.8, 0.5, 0.8];
-
-    if (item.type === 'sofa') {
-        color = '#ff6b6b';
-        size = [2, 0.6, 0.9];
-    } else if (item.type === 'bed') {
-        color = '#4dabf7';
-        size = [1.6, 0.4, 2];
-    } else if (item.type === 'plant') {
-        color = '#4ade80';
-        size = [0.5, 1.2, 0.5];
-    }
-
-    const width = item.width ?? size[0];
-    const height = item.height ?? size[1];
-    const depth = item.depth ?? size[2];
+    const preset = getFurniturePreset(item.type);
+    const color = item.color || preset.color;
+    const width = item.width ?? preset.width;
+    const height = item.height ?? preset.height;
+    const depth = item.depth ?? preset.depth;
     const altitude = item.altitude || 0;
+    const rotationY = -THREE.MathUtils.degToRad(item.rotation || 0);
+    const legInsetX = Math.max(width * 0.14, 0.07);
+    const legInsetZ = Math.max(depth * 0.14, 0.07);
+    const legThickness = Math.max(Math.min(width, depth) * 0.08, 0.04);
+    const softColor = new THREE.Color(color).offsetHSL(0, 0, 0.1);
+    const darkColor = new THREE.Color(color).offsetHSL(0, 0, -0.12);
+    const metalColor = '#dce5eb';
+    const darkMetal = '#5f6874';
+    const woodColor = '#8f6749';
+    const paleWood = '#c9a283';
+    const darkGlass = '#2d343e';
 
     return (
         <group
             position={[item.x + width / 2, floor.elevation + height / 2 + altitude, item.y + depth / 2]}
+            rotation={[0, rotationY, 0]}
             onClick={(event) => {
                 event.stopPropagation();
                 setActiveFloor(item.floorId);
                 setSelectedElement({ id: item.id, type: 'furniture' });
             }}
         >
-            <Box args={[width, height, depth]} castShadow receiveShadow>
-                <meshStandardMaterial color={item.color || color} roughness={0.3} />
-            </Box>
+            {item.type === 'sofa' && (
+                <>
+                    <Box args={[width, height * 0.42, depth]} position={[0, -height * 0.08, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color={color} roughness={0.68} />
+                    </Box>
+                    <Box args={[width, height * 0.28, depth * 0.28]} position={[0, height * 0.14, depth * 0.18]} castShadow receiveShadow>
+                        <meshStandardMaterial color={softColor} roughness={0.6} />
+                    </Box>
+                    <Box args={[width * 0.16, height * 0.26, depth * 0.72]} position={[-width * 0.42, height * 0.02, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color={darkColor} roughness={0.65} />
+                    </Box>
+                    <Box args={[width * 0.16, height * 0.26, depth * 0.72]} position={[width * 0.42, height * 0.02, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color={darkColor} roughness={0.65} />
+                    </Box>
+                </>
+            )}
+
+            {item.type === 'bed' && (
+                <>
+                    <Box args={[width, height * 0.32, depth]} position={[0, -height * 0.1, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color={color} roughness={0.7} />
+                    </Box>
+                    <Box args={[width * 0.98, height * 0.14, depth * 0.94]} position={[0, height * 0.02, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color="#eef6ff" roughness={0.82} />
+                    </Box>
+                    <Box args={[width, height * 0.36, depth * 0.08]} position={[0, height * 0.12, -depth * 0.46]} castShadow receiveShadow>
+                        <meshStandardMaterial color="#9cc1df" roughness={0.58} />
+                    </Box>
+                </>
+            )}
+
+            {item.type === 'plant' && (
+                <>
+                    <CylinderShape args={[width * 0.3, width * 0.24, height * 0.28, 18]} position={[0, -height * 0.26, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color="#8a5f43" roughness={0.75} />
+                    </CylinderShape>
+                    <CylinderShape args={[width * 0.46, width * 0.18, height * 0.72, 18]} position={[0, height * 0.08, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color={color} roughness={0.72} />
+                    </CylinderShape>
+                </>
+            )}
+
+            {item.type === 'dining_table' && (
+                <>
+                    <Box args={[width, height * 0.12, depth]} position={[0, height * 0.24, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color={color} roughness={0.62} />
+                    </Box>
+                    {[
+                        [-width / 2 + legInsetX, -height * 0.1, -depth / 2 + legInsetZ],
+                        [width / 2 - legInsetX, -height * 0.1, -depth / 2 + legInsetZ],
+                        [-width / 2 + legInsetX, -height * 0.1, depth / 2 - legInsetZ],
+                        [width / 2 - legInsetX, -height * 0.1, depth / 2 - legInsetZ]
+                    ].map((position, index) => (
+                        <Box key={index} args={[legThickness, height * 0.58, legThickness]} position={position as [number, number, number]} castShadow receiveShadow>
+                            <meshStandardMaterial color={woodColor} roughness={0.72} />
+                        </Box>
+                    ))}
+                </>
+            )}
+
+            {item.type === 'round_table' && (
+                <>
+                    <CylinderShape args={[Math.min(width, depth) * 0.48, Math.min(width, depth) * 0.48, height * 0.1, 28]} position={[0, height * 0.24, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color={color} roughness={0.56} />
+                    </CylinderShape>
+                    <CylinderShape args={[Math.min(width, depth) * 0.08, Math.min(width, depth) * 0.1, height * 0.56, 20]} position={[0, -height * 0.06, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color={metalColor} metalness={0.22} roughness={0.34} />
+                    </CylinderShape>
+                    <CylinderShape args={[Math.min(width, depth) * 0.28, Math.min(width, depth) * 0.32, height * 0.04, 24]} position={[0, -height * 0.32, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color={darkMetal} metalness={0.2} roughness={0.36} />
+                    </CylinderShape>
+                </>
+            )}
+
+            {item.type === 'dining_chair' && (
+                <>
+                    <Box args={[width * 0.7, height * 0.08, depth * 0.7]} position={[0, -height * 0.02, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color={color} roughness={0.64} />
+                    </Box>
+                    <Box args={[width * 0.74, height * 0.34, depth * 0.08]} position={[0, height * 0.22, -depth * 0.28]} castShadow receiveShadow>
+                        <meshStandardMaterial color={color} roughness={0.64} />
+                    </Box>
+                    {[
+                        [-width * 0.22, -height * 0.26, -depth * 0.22],
+                        [width * 0.22, -height * 0.26, -depth * 0.22],
+                        [-width * 0.22, -height * 0.26, depth * 0.22],
+                        [width * 0.22, -height * 0.26, depth * 0.22]
+                    ].map((position, index) => (
+                        <Box key={index} args={[legThickness * 0.85, height * 0.5, legThickness * 0.85]} position={position as [number, number, number]} castShadow receiveShadow>
+                            <meshStandardMaterial color={darkMetal} roughness={0.56} />
+                        </Box>
+                    ))}
+                </>
+            )}
+
+            {item.type === 'bar_stool' && (
+                <>
+                    <CylinderShape args={[width * 0.42, width * 0.42, height * 0.08, 20]} position={[0, height * 0.18, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color={color} roughness={0.56} />
+                    </CylinderShape>
+                    <CylinderShape args={[width * 0.07, width * 0.07, height * 0.58, 16]} position={[0, -height * 0.08, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color={metalColor} metalness={0.42} roughness={0.35} />
+                    </CylinderShape>
+                    <CylinderShape args={[width * 0.34, width * 0.34, height * 0.03, 20]} position={[0, -height * 0.2, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color={metalColor} metalness={0.38} roughness={0.32} />
+                    </CylinderShape>
+                </>
+            )}
+
+            {item.type === 'booth_seat' && (
+                <>
+                    <Box args={[width, height * 0.28, depth * 0.56]} position={[0, -height * 0.16, depth * 0.12]} castShadow receiveShadow>
+                        <meshStandardMaterial color={color} roughness={0.72} />
+                    </Box>
+                    <Box args={[width, height * 0.44, depth * 0.14]} position={[0, height * 0.1, -depth * 0.26]} castShadow receiveShadow>
+                        <meshStandardMaterial color={darkColor} roughness={0.68} />
+                    </Box>
+                    <Box args={[width, height * 0.06, depth]} position={[0, -height * 0.35, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color={paleWood} roughness={0.72} />
+                    </Box>
+                </>
+            )}
+
+            {item.type === 'corner_booth' && (
+                <>
+                    <Box args={[width, height * 0.08, depth]} position={[0, -height * 0.36, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color={paleWood} roughness={0.72} />
+                    </Box>
+                    <Box args={[width * 0.72, height * 0.26, depth * 0.34]} position={[-width * 0.08, -height * 0.16, depth * 0.2]} castShadow receiveShadow>
+                        <meshStandardMaterial color={color} roughness={0.72} />
+                    </Box>
+                    <Box args={[width * 0.34, height * 0.26, depth * 0.72]} position={[width * 0.2, -height * 0.16, -depth * 0.08]} castShadow receiveShadow>
+                        <meshStandardMaterial color={color} roughness={0.72} />
+                    </Box>
+                    <Box args={[width * 0.72, height * 0.42, depth * 0.12]} position={[-width * 0.08, height * 0.1, -depth * 0.2]} castShadow receiveShadow>
+                        <meshStandardMaterial color={darkColor} roughness={0.68} />
+                    </Box>
+                    <Box args={[width * 0.12, height * 0.42, depth * 0.72]} position={[-width * 0.2, height * 0.1, -depth * 0.08]} castShadow receiveShadow>
+                        <meshStandardMaterial color={darkColor} roughness={0.68} />
+                    </Box>
+                </>
+            )}
+
+            {item.type === 'service_counter' && (
+                <>
+                    <Box args={[width, height * 0.82, depth]} position={[0, -height * 0.03, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color={color} roughness={0.54} />
+                    </Box>
+                    <Box args={[width * 1.02, height * 0.08, depth * 1.04]} position={[0, height * 0.38, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color={metalColor} metalness={0.35} roughness={0.28} />
+                    </Box>
+                    <Box args={[width * 0.28, height * 0.5, depth * 0.04]} position={[-width * 0.22, 0, depth * 0.49]} castShadow receiveShadow>
+                        <meshStandardMaterial color="#99a4b8" roughness={0.44} />
+                    </Box>
+                    <Box args={[width * 0.28, height * 0.5, depth * 0.04]} position={[width * 0.22, 0, depth * 0.49]} castShadow receiveShadow>
+                        <meshStandardMaterial color="#99a4b8" roughness={0.44} />
+                    </Box>
+                </>
+            )}
+
+            {item.type === 'host_stand' && (
+                <>
+                    <Box args={[width * 0.82, height * 0.74, depth * 0.74]} position={[0, -height * 0.06, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color={color} roughness={0.58} />
+                    </Box>
+                    <Box args={[width, height * 0.08, depth]} position={[0, height * 0.34, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color={paleWood} roughness={0.5} />
+                    </Box>
+                    <Box args={[width * 0.7, height * 0.1, depth * 0.18]} position={[0, height * 0.16, -depth * 0.24]} castShadow receiveShadow>
+                        <meshStandardMaterial color={softColor} roughness={0.46} />
+                    </Box>
+                </>
+            )}
+
+            {item.type === 'prep_table' && (
+                <>
+                    <Box args={[width, height * 0.08, depth]} position={[0, height * 0.28, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color={color} metalness={0.44} roughness={0.28} />
+                    </Box>
+                    <Box args={[width * 0.84, height * 0.05, depth * 0.7]} position={[0, -height * 0.02, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color="#a4b4bf" metalness={0.4} roughness={0.3} />
+                    </Box>
+                    {[
+                        [-width / 2 + legInsetX, -height * 0.16, -depth / 2 + legInsetZ],
+                        [width / 2 - legInsetX, -height * 0.16, -depth / 2 + legInsetZ],
+                        [-width / 2 + legInsetX, -height * 0.16, depth / 2 - legInsetZ],
+                        [width / 2 - legInsetX, -height * 0.16, depth / 2 - legInsetZ]
+                    ].map((position, index) => (
+                        <Box key={index} args={[legThickness, height * 0.7, legThickness]} position={position as [number, number, number]} castShadow receiveShadow>
+                            <meshStandardMaterial color={metalColor} metalness={0.42} roughness={0.28} />
+                        </Box>
+                    ))}
+                </>
+            )}
+
+            {item.type === 'stove_range' && (
+                <>
+                    <Box args={[width, height * 0.88, depth]} position={[0, -height * 0.02, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color={color} metalness={0.34} roughness={0.38} />
+                    </Box>
+                    {[
+                        [-width * 0.22, height * 0.28, -depth * 0.2],
+                        [width * 0.22, height * 0.28, -depth * 0.2],
+                        [-width * 0.22, height * 0.28, depth * 0.2],
+                        [width * 0.22, height * 0.28, depth * 0.2]
+                    ].map((position, index) => (
+                        <CylinderShape key={index} args={[width * 0.12, width * 0.12, height * 0.03, 18]} position={position as [number, number, number]} castShadow receiveShadow>
+                            <meshStandardMaterial color="#20262f" roughness={0.36} />
+                        </CylinderShape>
+                    ))}
+                    <Box args={[width * 0.8, height * 0.06, depth * 0.04]} position={[0, height * 0.39, -depth * 0.44]} castShadow receiveShadow>
+                        <meshStandardMaterial color={metalColor} metalness={0.38} roughness={0.26} />
+                    </Box>
+                </>
+            )}
+
+            {item.type === 'fryer_station' && (
+                <>
+                    <Box args={[width, height * 0.88, depth]} position={[0, -height * 0.02, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color={color} metalness={0.3} roughness={0.34} />
+                    </Box>
+                    <Box args={[width * 0.28, height * 0.16, depth * 0.28]} position={[-width * 0.18, height * 0.26, -depth * 0.04]} castShadow receiveShadow>
+                        <meshStandardMaterial color="#505962" roughness={0.3} />
+                    </Box>
+                    <Box args={[width * 0.28, height * 0.16, depth * 0.28]} position={[width * 0.18, height * 0.26, -depth * 0.04]} castShadow receiveShadow>
+                        <meshStandardMaterial color="#505962" roughness={0.3} />
+                    </Box>
+                    {[-width * 0.2, -width * 0.08, width * 0.08, width * 0.2].map((x, index) => (
+                        <Box key={index} args={[width * 0.03, height * 0.2, depth * 0.03]} position={[x, height * 0.42, -depth * 0.28]} castShadow receiveShadow>
+                            <meshStandardMaterial color={metalColor} metalness={0.42} roughness={0.24} />
+                        </Box>
+                    ))}
+                    <Box args={[width * 0.56, height * 0.04, depth * 0.12]} position={[0, -height * 0.04, depth * 0.26]} castShadow receiveShadow>
+                        <meshStandardMaterial color={metalColor} metalness={0.4} roughness={0.24} />
+                    </Box>
+                </>
+            )}
+
+            {item.type === 'oven_unit' && (
+                <>
+                    <Box args={[width, height, depth]} position={[0, 0, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color={color} metalness={0.28} roughness={0.34} />
+                    </Box>
+                    <Box args={[width * 0.76, height * 0.32, depth * 0.08]} position={[0, -height * 0.08, depth * 0.47]} castShadow receiveShadow>
+                        <meshStandardMaterial color={darkGlass} metalness={0.08} roughness={0.18} />
+                    </Box>
+                    {[-0.22, -0.07, 0.08, 0.23].map((offset, index) => (
+                        <CylinderShape key={index} args={[width * 0.035, width * 0.035, depth * 0.05, 14]} position={[width * offset, height * 0.34, depth * 0.42]} rotation={[Math.PI / 2, 0, 0]} castShadow receiveShadow>
+                            <meshStandardMaterial color={metalColor} metalness={0.4} roughness={0.24} />
+                        </CylinderShape>
+                    ))}
+                    <Box args={[width * 0.58, height * 0.03, depth * 0.05]} position={[0, -height * 0.28, depth * 0.45]} castShadow receiveShadow>
+                        <meshStandardMaterial color={metalColor} metalness={0.38} roughness={0.24} />
+                    </Box>
+                </>
+            )}
+
+            {item.type === 'double_sink' && (
+                <>
+                    <Box args={[width, height * 0.86, depth]} position={[0, -height * 0.04, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color={color} metalness={0.32} roughness={0.34} />
+                    </Box>
+                    <Box args={[width * 0.28, height * 0.12, depth * 0.34]} position={[-width * 0.18, height * 0.28, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color="#73848e" roughness={0.32} />
+                    </Box>
+                    <Box args={[width * 0.28, height * 0.12, depth * 0.34]} position={[width * 0.18, height * 0.28, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color="#73848e" roughness={0.32} />
+                    </Box>
+                    <CylinderShape args={[width * 0.04, width * 0.04, height * 0.18, 14]} position={[0, height * 0.36, -depth * 0.2]} castShadow receiveShadow>
+                        <meshStandardMaterial color={metalColor} metalness={0.46} roughness={0.24} />
+                    </CylinderShape>
+                </>
+            )}
+
+            {item.type === 'fridge_display' && (
+                <>
+                    <Box args={[width, height, depth]} position={[0, 0, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color={color} metalness={0.18} roughness={0.24} />
+                    </Box>
+                    <Box args={[width * 0.04, height * 0.7, depth * 0.04]} position={[-width * 0.16, 0, depth * 0.48]} castShadow receiveShadow>
+                        <meshStandardMaterial color="#86a0b0" metalness={0.34} roughness={0.24} />
+                    </Box>
+                    <Box args={[width * 0.04, height * 0.52, depth * 0.04]} position={[width * 0.16, -height * 0.08, depth * 0.48]} castShadow receiveShadow>
+                        <meshStandardMaterial color="#86a0b0" metalness={0.34} roughness={0.24} />
+                    </Box>
+                </>
+            )}
+
+            {item.type === 'display_case' && (
+                <>
+                    <Box args={[width, height * 0.38, depth]} position={[0, -height * 0.2, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color="#55606f" roughness={0.42} />
+                    </Box>
+                    <Box args={[width * 0.96, height * 0.42, depth * 0.96]} position={[0, height * 0.16, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color={color} transparent opacity={0.42} roughness={0.08} metalness={0.08} />
+                    </Box>
+                    <Box args={[width * 0.82, height * 0.03, depth * 0.74]} position={[0, -height * 0.02, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color="#dce5eb" metalness={0.24} roughness={0.22} />
+                    </Box>
+                </>
+            )}
+
+            {item.type === 'espresso_station' && (
+                <>
+                    <Box args={[width, height * 0.62, depth * 0.7]} position={[0, 0, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color={color} roughness={0.4} metalness={0.2} />
+                    </Box>
+                    <Box args={[width * 0.18, height * 0.2, depth * 0.1]} position={[-width * 0.22, -height * 0.06, depth * 0.22]} castShadow receiveShadow>
+                        <meshStandardMaterial color={metalColor} metalness={0.34} roughness={0.24} />
+                    </Box>
+                    <Box args={[width * 0.18, height * 0.2, depth * 0.1]} position={[width * 0.22, -height * 0.06, depth * 0.22]} castShadow receiveShadow>
+                        <meshStandardMaterial color={metalColor} metalness={0.34} roughness={0.24} />
+                    </Box>
+                    <Box args={[width * 0.7, height * 0.06, depth * 0.78]} position={[0, height * 0.22, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color="#c99d6c" roughness={0.46} />
+                    </Box>
+                </>
+            )}
+
+            {item.type === 'bakery_rack' && (
+                <>
+                    {[
+                        [-width * 0.4, 0, -depth * 0.36],
+                        [width * 0.4, 0, -depth * 0.36],
+                        [-width * 0.4, 0, depth * 0.36],
+                        [width * 0.4, 0, depth * 0.36]
+                    ].map((position, index) => (
+                        <Box key={index} args={[legThickness, height * 0.92, legThickness]} position={position as [number, number, number]} castShadow receiveShadow>
+                            <meshStandardMaterial color={metalColor} metalness={0.42} roughness={0.22} />
+                        </Box>
+                    ))}
+                    {[-0.28, -0.08, 0.12, 0.32].map((offset, index) => (
+                        <Box key={index} args={[width * 0.88, height * 0.03, depth * 0.84]} position={[0, height * offset, 0]} castShadow receiveShadow>
+                            <meshStandardMaterial color={color} metalness={0.3} roughness={0.24} />
+                        </Box>
+                    ))}
+                </>
+            )}
+
+            {item.type === 'salad_bar' && (
+                <>
+                    <Box args={[width, height * 0.56, depth]} position={[0, -height * 0.16, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color={color} roughness={0.48} />
+                    </Box>
+                    <Box args={[width * 0.92, height * 0.22, depth * 0.88]} position={[0, height * 0.16, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color="#bfe7da" transparent opacity={0.42} roughness={0.08} metalness={0.06} />
+                    </Box>
+                    <Box args={[width * 0.22, height * 0.02, depth * 0.56]} position={[-width * 0.26, height * 0.28, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color="#dbeee6" roughness={0.26} />
+                    </Box>
+                    <Box args={[width * 0.22, height * 0.02, depth * 0.56]} position={[0, height * 0.28, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color="#dbeee6" roughness={0.26} />
+                    </Box>
+                    <Box args={[width * 0.22, height * 0.02, depth * 0.56]} position={[width * 0.26, height * 0.28, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color="#dbeee6" roughness={0.26} />
+                    </Box>
+                </>
+            )}
+
+            {item.type === 'beer_tap' && (
+                <>
+                    <Box args={[width, height * 0.62, depth]} position={[0, -height * 0.1, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color={color} roughness={0.56} />
+                    </Box>
+                    <Box args={[width * 1.02, height * 0.08, depth * 1.02]} position={[0, height * 0.26, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color={paleWood} roughness={0.46} />
+                    </Box>
+                    {[-width * 0.18, 0, width * 0.18].map((x, index) => (
+                        <group key={index} position={[x, height * 0.2, -depth * 0.04]}>
+                            <CylinderShape args={[width * 0.05, width * 0.05, height * 0.34, 16]} castShadow receiveShadow>
+                                <meshStandardMaterial color={metalColor} metalness={0.44} roughness={0.22} />
+                            </CylinderShape>
+                            <Box args={[width * 0.12, height * 0.06, depth * 0.08]} position={[0, height * 0.1, depth * 0.08]} castShadow receiveShadow>
+                                <meshStandardMaterial color="#f0cf68" roughness={0.28} />
+                            </Box>
+                        </group>
+                    ))}
+                </>
+            )}
         </group>
     );
 }

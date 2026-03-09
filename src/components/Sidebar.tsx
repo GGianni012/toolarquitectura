@@ -1,8 +1,37 @@
 import { useRef } from 'react';
 import { useStore, InteractMode } from '../store/useStore';
-import { Square, Sofa, BedDouble, Trees, Circle, DoorOpen, MousePointer2, PenTool, Hexagon, Layers3, Plus, Eye, EyeOff, Upload, ArrowUpDown } from 'lucide-react';
+import { Square, Circle, DoorOpen, MousePointer2, PenTool, Hexagon, Layers3, Plus, Eye, EyeOff, Upload, ArrowUpDown } from 'lucide-react';
 import { importReferenceFile } from '../utils/referenceImport';
+import { FURNITURE_PRESETS } from '../utils/furnitureCatalog';
 import './Sidebar.css';
+
+function getFurnitureGlyph(type: string) {
+    switch (type) {
+        case 'sofa': return 'SF';
+        case 'bed': return 'BD';
+        case 'plant': return 'PL';
+        case 'dining_table': return 'TB';
+        case 'round_table': return 'RT';
+        case 'dining_chair': return 'CH';
+        case 'bar_stool': return 'BS';
+        case 'booth_seat': return 'BT';
+        case 'corner_booth': return 'CB';
+        case 'service_counter': return 'CT';
+        case 'host_stand': return 'HS';
+        case 'prep_table': return 'PT';
+        case 'stove_range': return 'ST';
+        case 'fryer_station': return 'FY';
+        case 'oven_unit': return 'OV';
+        case 'double_sink': return 'SK';
+        case 'fridge_display': return 'FR';
+        case 'display_case': return 'DC';
+        case 'espresso_station': return 'ES';
+        case 'bakery_rack': return 'BR';
+        case 'salad_bar': return 'SB';
+        case 'beer_tap': return 'TP';
+        default: return 'FM';
+    }
+}
 
 export default function Sidebar() {
     const {
@@ -92,6 +121,8 @@ export default function Sidebar() {
         { id: 'draw_wall', name: 'Draw Walls', icon: <PenTool size={24} />, mode: 'draw_wall' },
         { id: 'draw_surface', name: 'Draw Room', icon: <Hexagon size={24} />, mode: 'draw_surface' },
     ];
+    const livingFurniture = FURNITURE_PRESETS.filter((preset) => preset.category === 'living');
+    const gastronomyFurniture = FURNITURE_PRESETS.filter((preset) => preset.category === 'gastronomy');
 
     return (
         <aside className="sidebar glass-panel">
@@ -244,33 +275,74 @@ export default function Sidebar() {
 
             <div className="tool-section">
                 <h3>Furniture</h3>
-                <div className="tool-grid">
-                    <div
-                        className="tool-card"
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, 'furniture', { type: 'sofa', rotation: 0, width: 2, depth: 0.9, height: 0.6 })}
-                        onClick={() => addFurniture({ type: 'sofa', x: 2, y: 2, rotation: 0, width: 2, depth: 0.9, height: 0.6 })}
-                    >
-                        <Sofa size={24} />
-                        <span>Sofa</span>
+                <div className="tool-subsection">
+                    <span className="tool-subtitle">Core</span>
+                    <div className="tool-grid">
+                        {livingFurniture.map((preset, index) => (
+                            <div
+                                key={preset.type}
+                                className="tool-card"
+                                draggable
+                                onDragStart={(e) => handleDragStart(e, 'furniture', {
+                                    type: preset.type,
+                                    rotation: 0,
+                                    width: preset.width,
+                                    depth: preset.depth,
+                                    height: preset.height,
+                                    color: preset.color,
+                                    name: preset.name
+                                })}
+                                onClick={() => addFurniture({
+                                    type: preset.type,
+                                    x: 2 + index,
+                                    y: 2 + (index % 2),
+                                    rotation: 0,
+                                    width: preset.width,
+                                    depth: preset.depth,
+                                    height: preset.height,
+                                    color: preset.color,
+                                    name: preset.name
+                                })}
+                            >
+                                <div className="tool-card-glyph">{getFurnitureGlyph(preset.type)}</div>
+                                <span>{preset.name}</span>
+                            </div>
+                        ))}
                     </div>
-                    <div
-                        className="tool-card"
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, 'furniture', { type: 'bed', rotation: 0, width: 1.6, depth: 2, height: 0.4 })}
-                        onClick={() => addFurniture({ type: 'bed', x: 4, y: 2, rotation: 0, width: 1.6, depth: 2, height: 0.4 })}
-                    >
-                        <BedDouble size={24} />
-                        <span>Bed</span>
-                    </div>
-                    <div
-                        className="tool-card"
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, 'furniture', { type: 'plant', rotation: 0, width: 0.5, depth: 0.5, height: 1.2 })}
-                        onClick={() => addFurniture({ type: 'plant', x: 2, y: 4, rotation: 0, width: 0.5, depth: 0.5, height: 1.2 })}
-                    >
-                        <Trees size={24} />
-                        <span>Plant</span>
+                </div>
+                <div className="tool-subsection">
+                    <span className="tool-subtitle">Gastronomy</span>
+                    <div className="tool-grid">
+                        {gastronomyFurniture.map((preset, index) => (
+                            <div
+                                key={preset.type}
+                                className="tool-card tool-card-gastronomy"
+                                draggable
+                                onDragStart={(e) => handleDragStart(e, 'furniture', {
+                                    type: preset.type,
+                                    rotation: 0,
+                                    width: preset.width,
+                                    depth: preset.depth,
+                                    height: preset.height,
+                                    color: preset.color,
+                                    name: preset.name
+                                })}
+                                onClick={() => addFurniture({
+                                    type: preset.type,
+                                    x: 2 + (index % 3),
+                                    y: 2 + Math.floor(index / 3),
+                                    rotation: 0,
+                                    width: preset.width,
+                                    depth: preset.depth,
+                                    height: preset.height,
+                                    color: preset.color,
+                                    name: preset.name
+                                })}
+                            >
+                                <div className="tool-card-glyph">{getFurnitureGlyph(preset.type)}</div>
+                                <span>{preset.name}</span>
+                            </div>
+                        ))}
                     </div>
                 </div>
             </div>

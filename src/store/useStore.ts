@@ -7,6 +7,29 @@ export type OpenSide = 'north' | 'south' | 'east' | 'west' | 'none';
 export type RoomEdge = Exclude<OpenSide, 'none'>;
 export type StairDirection = Exclude<OpenSide, 'none'>;
 export type DoorHostKind = 'wall' | 'room';
+export type FurnitureType =
+    | 'sofa'
+    | 'bed'
+    | 'plant'
+    | 'dining_table'
+    | 'round_table'
+    | 'dining_chair'
+    | 'bar_stool'
+    | 'booth_seat'
+    | 'corner_booth'
+    | 'service_counter'
+    | 'host_stand'
+    | 'prep_table'
+    | 'stove_range'
+    | 'fryer_station'
+    | 'oven_unit'
+    | 'double_sink'
+    | 'fridge_display'
+    | 'display_case'
+    | 'espresso_station'
+    | 'bakery_rack'
+    | 'salad_bar'
+    | 'beer_tap';
 
 export interface BaseElement {
     id: string;
@@ -67,7 +90,7 @@ export interface Surface extends PositionedElement {
 }
 
 export interface Furniture extends PositionedElement {
-    type: 'sofa' | 'bed' | 'plant';
+    type: FurnitureType;
     roomId?: string;
     x: number;
     y: number;

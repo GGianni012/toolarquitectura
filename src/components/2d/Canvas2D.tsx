@@ -1,6 +1,5 @@
 import { useStore, Room, Wall, Furniture, Door, Cylinder, Surface, Stair, FloorReference } from '../../store/useStore';
 import { useDrag } from '@use-gesture/react';
-import { Sofa, BedDouble, Trees } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
     findBestRoomForRect,
@@ -16,6 +15,7 @@ import {
     type DoorHostCandidate,
     type Rect2D
 } from '../../utils/buildingGeometry';
+import { getFurniturePreset } from '../../utils/furnitureCatalog';
 import './Canvas2D.css';
 
 const GRID_SIZE = 50;
@@ -134,11 +134,12 @@ function getObjectBounds(element: Room | Furniture | Cylinder | Stair | Wall, ty
             return getRoomBounds(element as Room);
         case 'furniture': {
             const furniture = element as Furniture;
+            const preset = getFurniturePreset(furniture.type);
             return {
                 x: furniture.x,
                 y: furniture.y,
-                width: furniture.width ?? 1,
-                height: furniture.depth ?? 1
+                width: furniture.width ?? preset.width,
+                height: furniture.depth ?? preset.depth
             };
         }
         case 'cylinder': {
@@ -837,8 +838,9 @@ function FurnitureElement({
 }) {
     const { updateFurniture, interactMode, selectedElement, setSelectedElement } = useStore();
     const isSelected = selectedElement?.id === item.id;
-    const width = item.width ?? 1;
-    const depth = item.depth ?? 1;
+    const preset = getFurniturePreset(item.type);
+    const width = item.width ?? preset.width;
+    const depth = item.depth ?? preset.depth;
 
     const bind = useDrag(({ movement: [mx, my], first, memo }) => {
         if (interactMode !== 'select' || item.locked) return memo;
@@ -880,12 +882,232 @@ function FurnitureElement({
     const bindWidth = bindResize('width');
     const bindDepth = bindResize('depth');
 
-    const getIcon = () => {
+    const renderTopView = () => {
         switch (item.type) {
-            case 'sofa': return <Sofa size={32} />;
-            case 'bed': return <BedDouble size={32} />;
-            case 'plant': return <Trees size={32} color="#4ade80" />;
-            default: return null;
+            case 'sofa':
+                return (
+                    <svg viewBox="0 0 100 100" className="furniture-svg">
+                        <rect x="18" y="34" width="64" height="34" rx="14" fill="#f7d7d1" stroke="#ffe9e5" strokeWidth="4" />
+                        <rect x="26" y="24" width="48" height="18" rx="9" fill="#ffd5c6" />
+                        <rect x="14" y="42" width="14" height="22" rx="7" fill="#ffb49f" />
+                        <rect x="72" y="42" width="14" height="22" rx="7" fill="#ffb49f" />
+                    </svg>
+                );
+            case 'bed':
+                return (
+                    <svg viewBox="0 0 100 100" className="furniture-svg">
+                        <rect x="18" y="16" width="64" height="68" rx="10" fill="#d2ecff" stroke="#eef8ff" strokeWidth="4" />
+                        <rect x="18" y="16" width="64" height="18" rx="10" fill="#9fc9ea" />
+                        <rect x="26" y="38" width="20" height="14" rx="6" fill="#fdfdfd" />
+                        <rect x="54" y="38" width="20" height="14" rx="6" fill="#fdfdfd" />
+                    </svg>
+                );
+            case 'plant':
+                return (
+                    <svg viewBox="0 0 100 100" className="furniture-svg">
+                        <circle cx="50" cy="42" r="22" fill="#74d68e" />
+                        <circle cx="36" cy="50" r="14" fill="#4fb86b" />
+                        <circle cx="64" cy="50" r="14" fill="#4fb86b" />
+                        <rect x="38" y="62" width="24" height="18" rx="6" fill="#8a6042" />
+                    </svg>
+                );
+            case 'dining_table':
+                return (
+                    <svg viewBox="0 0 100 100" className="furniture-svg">
+                        <rect x="20" y="28" width="60" height="44" rx="12" fill="#d8b189" stroke="#f3dcc7" strokeWidth="4" />
+                        <circle cx="32" cy="40" r="4" fill="#9b7250" />
+                        <circle cx="68" cy="40" r="4" fill="#9b7250" />
+                        <circle cx="32" cy="60" r="4" fill="#9b7250" />
+                        <circle cx="68" cy="60" r="4" fill="#9b7250" />
+                    </svg>
+                );
+            case 'round_table':
+                return (
+                    <svg viewBox="0 0 100 100" className="furniture-svg">
+                        <circle cx="50" cy="50" r="26" fill="#d6ba9c" stroke="#f6e6d5" strokeWidth="4" />
+                        <circle cx="50" cy="50" r="6" fill="#9c7858" />
+                        <circle cx="50" cy="18" r="8" fill="#8d97ad" />
+                        <circle cx="82" cy="50" r="8" fill="#8d97ad" />
+                        <circle cx="50" cy="82" r="8" fill="#8d97ad" />
+                        <circle cx="18" cy="50" r="8" fill="#8d97ad" />
+                    </svg>
+                );
+            case 'dining_chair':
+                return (
+                    <svg viewBox="0 0 100 100" className="furniture-svg">
+                        <rect x="28" y="22" width="44" height="18" rx="8" fill="#cfd7e6" />
+                        <rect x="30" y="42" width="40" height="28" rx="10" fill="#7f8ba4" />
+                        <line x1="34" y1="70" x2="28" y2="84" stroke="#d0d8e6" strokeWidth="5" />
+                        <line x1="66" y1="70" x2="72" y2="84" stroke="#d0d8e6" strokeWidth="5" />
+                        <line x1="40" y1="70" x2="40" y2="86" stroke="#d0d8e6" strokeWidth="5" />
+                        <line x1="60" y1="70" x2="60" y2="86" stroke="#d0d8e6" strokeWidth="5" />
+                    </svg>
+                );
+            case 'bar_stool':
+                return (
+                    <svg viewBox="0 0 100 100" className="furniture-svg">
+                        <circle cx="50" cy="28" r="18" fill="#d9b491" />
+                        <rect x="46" y="42" width="8" height="24" rx="4" fill="#e8eef7" />
+                        <circle cx="50" cy="74" r="18" fill="none" stroke="#d8e2ef" strokeWidth="5" />
+                        <circle cx="50" cy="74" r="4" fill="#d8e2ef" />
+                    </svg>
+                );
+            case 'booth_seat':
+                return (
+                    <svg viewBox="0 0 100 100" className="furniture-svg">
+                        <rect x="14" y="22" width="72" height="20" rx="10" fill="#d77e7e" />
+                        <rect x="14" y="44" width="72" height="30" rx="10" fill="#b95e5e" />
+                        <rect x="18" y="76" width="64" height="8" rx="4" fill="#f1d1c2" />
+                    </svg>
+                );
+            case 'corner_booth':
+                return (
+                    <svg viewBox="0 0 100 100" className="furniture-svg">
+                        <path d="M14 18 H62 A10 10 0 0 1 72 28 V38 H42 V70 H30 A16 16 0 0 1 14 54 Z" fill="#bb666d" stroke="#f1ccd0" strokeWidth="4" />
+                        <path d="M42 38 H72 A14 14 0 0 1 86 52 V86 H58 V54 H42 Z" fill="#93484d" />
+                        <rect x="20" y="76" width="62" height="8" rx="4" fill="#f2d8c8" />
+                    </svg>
+                );
+            case 'service_counter':
+                return (
+                    <svg viewBox="0 0 100 100" className="furniture-svg">
+                        <rect x="10" y="24" width="80" height="14" rx="7" fill="#d8dde9" />
+                        <rect x="14" y="38" width="72" height="42" rx="8" fill="#71798d" />
+                        <line x1="38" y1="40" x2="38" y2="78" stroke="#9ca5b7" strokeWidth="4" />
+                        <line x1="62" y1="40" x2="62" y2="78" stroke="#9ca5b7" strokeWidth="4" />
+                    </svg>
+                );
+            case 'host_stand':
+                return (
+                    <svg viewBox="0 0 100 100" className="furniture-svg">
+                        <path d="M26 26 H74 L66 78 H34 Z" fill="#7b6555" stroke="#dac4b6" strokeWidth="4" />
+                        <rect x="22" y="18" width="56" height="12" rx="6" fill="#cfaf90" />
+                        <rect x="40" y="40" width="20" height="8" rx="4" fill="#ead7c8" opacity="0.85" />
+                    </svg>
+                );
+            case 'prep_table':
+                return (
+                    <svg viewBox="0 0 100 100" className="furniture-svg">
+                        <rect x="14" y="24" width="72" height="14" rx="6" fill="#dce6ee" />
+                        <rect x="20" y="52" width="60" height="8" rx="4" fill="#a7b6c0" />
+                        <line x1="24" y1="38" x2="20" y2="84" stroke="#dce6ee" strokeWidth="5" />
+                        <line x1="76" y1="38" x2="80" y2="84" stroke="#dce6ee" strokeWidth="5" />
+                        <line x1="40" y1="38" x2="40" y2="84" stroke="#dce6ee" strokeWidth="5" />
+                        <line x1="60" y1="38" x2="60" y2="84" stroke="#dce6ee" strokeWidth="5" />
+                    </svg>
+                );
+            case 'stove_range':
+                return (
+                    <svg viewBox="0 0 100 100" className="furniture-svg">
+                        <rect x="18" y="20" width="64" height="60" rx="10" fill="#707a84" />
+                        <circle cx="34" cy="40" r="9" fill="#2b3440" stroke="#dce6ef" strokeWidth="3" />
+                        <circle cx="66" cy="40" r="9" fill="#2b3440" stroke="#dce6ef" strokeWidth="3" />
+                        <circle cx="34" cy="62" r="9" fill="#2b3440" stroke="#dce6ef" strokeWidth="3" />
+                        <circle cx="66" cy="62" r="9" fill="#2b3440" stroke="#dce6ef" strokeWidth="3" />
+                        <rect x="26" y="14" width="48" height="8" rx="4" fill="#dce6ef" />
+                    </svg>
+                );
+            case 'fryer_station':
+                return (
+                    <svg viewBox="0 0 100 100" className="furniture-svg">
+                        <rect x="18" y="20" width="64" height="60" rx="10" fill="#79838d" />
+                        <rect x="24" y="28" width="22" height="22" rx="5" fill="#55606a" />
+                        <rect x="54" y="28" width="22" height="22" rx="5" fill="#55606a" />
+                        <path d="M30 18 V8 M40 18 V8 M60 18 V8 M70 18 V8" stroke="#dfe7ee" strokeWidth="4" strokeLinecap="round" />
+                        <rect x="28" y="56" width="44" height="8" rx="4" fill="#d4dee8" />
+                    </svg>
+                );
+            case 'oven_unit':
+                return (
+                    <svg viewBox="0 0 100 100" className="furniture-svg">
+                        <rect x="18" y="14" width="64" height="72" rx="10" fill="#6b7481" />
+                        <rect x="26" y="32" width="48" height="34" rx="8" fill="#2d343e" stroke="#c7d2de" strokeWidth="4" />
+                        <circle cx="34" cy="22" r="3.5" fill="#dbe4ec" />
+                        <circle cx="46" cy="22" r="3.5" fill="#dbe4ec" />
+                        <circle cx="58" cy="22" r="3.5" fill="#dbe4ec" />
+                        <circle cx="70" cy="22" r="3.5" fill="#dbe4ec" />
+                        <rect x="30" y="72" width="40" height="6" rx="3" fill="#dbe4ec" />
+                    </svg>
+                );
+            case 'double_sink':
+                return (
+                    <svg viewBox="0 0 100 100" className="furniture-svg">
+                        <rect x="14" y="24" width="72" height="46" rx="8" fill="#b9cad5" />
+                        <rect x="22" y="32" width="24" height="24" rx="6" fill="#6d7c86" />
+                        <rect x="54" y="32" width="24" height="24" rx="6" fill="#6d7c86" />
+                        <path d="M50 18 C50 12, 62 12, 62 20" stroke="#dce6ef" strokeWidth="5" fill="none" />
+                    </svg>
+                );
+            case 'fridge_display':
+                return (
+                    <svg viewBox="0 0 100 100" className="furniture-svg">
+                        <rect x="24" y="10" width="52" height="80" rx="10" fill="#e9f2f7" stroke="#b8cedc" strokeWidth="4" />
+                        <line x1="50" y1="14" x2="50" y2="86" stroke="#8ca7b6" strokeWidth="4" />
+                        <line x1="38" y1="30" x2="38" y2="56" stroke="#8ca7b6" strokeWidth="4" />
+                        <line x1="62" y1="44" x2="62" y2="70" stroke="#8ca7b6" strokeWidth="4" />
+                    </svg>
+                );
+            case 'display_case':
+                return (
+                    <svg viewBox="0 0 100 100" className="furniture-svg">
+                        <path d="M18 34 L82 24 L76 58 L24 66 Z" fill="#9fd1db" stroke="#d7f1f6" strokeWidth="4" />
+                        <rect x="20" y="58" width="60" height="18" rx="6" fill="#55606f" />
+                        <line x1="50" y1="24" x2="50" y2="76" stroke="#d7f1f6" strokeWidth="3" opacity="0.75" />
+                    </svg>
+                );
+            case 'espresso_station':
+                return (
+                    <svg viewBox="0 0 100 100" className="furniture-svg">
+                        <rect x="18" y="26" width="64" height="38" rx="10" fill="#5a6271" />
+                        <rect x="28" y="36" width="16" height="12" rx="4" fill="#d9e4ef" />
+                        <rect x="56" y="36" width="16" height="12" rx="4" fill="#d9e4ef" />
+                        <line x1="36" y1="48" x2="36" y2="66" stroke="#c8d5e1" strokeWidth="4" />
+                        <line x1="64" y1="48" x2="64" y2="66" stroke="#c8d5e1" strokeWidth="4" />
+                        <rect x="24" y="68" width="52" height="10" rx="5" fill="#c29a6a" />
+                    </svg>
+                );
+            case 'bakery_rack':
+                return (
+                    <svg viewBox="0 0 100 100" className="furniture-svg">
+                        <line x1="26" y1="12" x2="20" y2="88" stroke="#dfe8ef" strokeWidth="5" />
+                        <line x1="74" y1="12" x2="80" y2="88" stroke="#dfe8ef" strokeWidth="5" />
+                        <rect x="24" y="22" width="52" height="7" rx="3.5" fill="#b3bfca" />
+                        <rect x="22" y="40" width="56" height="7" rx="3.5" fill="#b3bfca" />
+                        <rect x="20" y="58" width="60" height="7" rx="3.5" fill="#b3bfca" />
+                        <rect x="18" y="76" width="64" height="7" rx="3.5" fill="#b3bfca" />
+                    </svg>
+                );
+            case 'salad_bar':
+                return (
+                    <svg viewBox="0 0 100 100" className="furniture-svg">
+                        <rect x="14" y="48" width="72" height="24" rx="8" fill="#83ad9e" />
+                        <path d="M20 44 H80 L70 24 H30 Z" fill="#b7e0d1" stroke="#ebfff8" strokeWidth="4" />
+                        <line x1="36" y1="30" x2="30" y2="72" stroke="#ebfff8" strokeWidth="3" />
+                        <line x1="64" y1="30" x2="70" y2="72" stroke="#ebfff8" strokeWidth="3" />
+                        <rect x="24" y="52" width="14" height="12" rx="4" fill="#d7ece1" />
+                        <rect x="43" y="52" width="14" height="12" rx="4" fill="#d7ece1" />
+                        <rect x="62" y="52" width="14" height="12" rx="4" fill="#d7ece1" />
+                    </svg>
+                );
+            case 'beer_tap':
+                return (
+                    <svg viewBox="0 0 100 100" className="furniture-svg">
+                        <rect x="14" y="50" width="72" height="24" rx="8" fill="#8a6f57" />
+                        <rect x="24" y="24" width="52" height="18" rx="9" fill="#d7b48f" />
+                        <line x1="36" y1="24" x2="36" y2="56" stroke="#e7eef5" strokeWidth="4" />
+                        <line x1="50" y1="24" x2="50" y2="56" stroke="#e7eef5" strokeWidth="4" />
+                        <line x1="64" y1="24" x2="64" y2="56" stroke="#e7eef5" strokeWidth="4" />
+                        <circle cx="36" cy="58" r="4" fill="#f0d36a" />
+                        <circle cx="50" cy="58" r="4" fill="#f0d36a" />
+                        <circle cx="64" cy="58" r="4" fill="#f0d36a" />
+                    </svg>
+                );
+            default:
+                return (
+                    <svg viewBox="0 0 100 100" className="furniture-svg">
+                        <rect x="18" y="18" width="64" height="64" rx="14" fill="#d9dee8" />
+                    </svg>
+                );
         }
     };
 
@@ -904,11 +1126,11 @@ function FurnitureElement({
                 height: depth * GRID_SIZE,
                 transform: `rotate(${item.rotation}deg)`,
                 transformOrigin: 'center center',
-                backgroundColor: item.color || 'rgba(255, 255, 255, 0.1)',
+                backgroundColor: item.color || preset.color,
                 boxShadow: isSelected ? '0 0 0 3px #fca5a5' : undefined
             }}
         >
-            {getIcon()}
+            {renderTopView()}
             {interactMode === 'select' && !item.locked && isSelected && (
                 <>
                     <div {...bindWidth()} className="resize-handle r" title="Resize width" />

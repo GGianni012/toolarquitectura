@@ -3,6 +3,7 @@ import { useDrag } from '@use-gesture/react';
 import { useStore } from '../store/useStore';
 import { GripHorizontal, Lock, Unlock, X } from 'lucide-react';
 import { getRoomEdgeCount, getRoomEdgeLabel, isRoomWallVisible } from '../utils/buildingGeometry';
+import { getFurniturePreset } from '../utils/furnitureCatalog';
 import './PropertiesPanel.css';
 
 const PLAN_UNIT_IN_METERS = 0.5;
@@ -307,6 +308,7 @@ export default function PropertiesPanel() {
                 return wall ? wall.name || 'Custom wall' : 'Attached wall';
             })())
         : null;
+    const furniturePreset = type === 'furniture' ? getFurniturePreset(element.type) : null;
     const measurementRows = (() => {
         switch (type) {
             case 'room':
@@ -339,10 +341,11 @@ export default function PropertiesPanel() {
                 ];
             case 'furniture':
                 return [
+                    { label: 'Preset', value: furniturePreset?.name || 'Furniture' },
                     { label: 'Origin', value: `${formatPlanMeasure(element.x)}, ${formatPlanMeasure(element.y)}` },
-                    { label: 'Width', value: formatMeters(element.width !== undefined ? element.width : 1) },
-                    { label: 'Depth', value: formatMeters(element.depth !== undefined ? element.depth : 1) },
-                    { label: 'Height', value: formatMeters(element.height !== undefined ? element.height : 0.5) },
+                    { label: 'Width', value: formatMeters(element.width !== undefined ? element.width : (furniturePreset?.width || 1)) },
+                    { label: 'Depth', value: formatMeters(element.depth !== undefined ? element.depth : (furniturePreset?.depth || 1)) },
+                    { label: 'Height', value: formatMeters(element.height !== undefined ? element.height : (furniturePreset?.height || 0.5)) },
                     { label: 'Rotation', value: `${Math.round(element.rotation || 0)}°` }
                 ];
             case 'cylinder':
@@ -586,6 +589,12 @@ export default function PropertiesPanel() {
                 {/* Altitude for Furniture */}
                 {type === 'furniture' && (
                     <>
+                        <div className="property-row stacked">
+                            <label>Preset</label>
+                            <div className="property-chip">
+                                {furniturePreset?.name || 'Furniture'}
+                            </div>
+                        </div>
                         <div className="property-row">
                             <label>X</label>
                             <input
@@ -610,7 +619,7 @@ export default function PropertiesPanel() {
                                 type="number"
                                 step="0.05"
                                 min="0.2"
-                                value={element.width !== undefined ? element.width : 1}
+                                value={element.width !== undefined ? element.width : (furniturePreset?.width || 1)}
                                 onChange={(e) => handleChange('width', parseFloat(e.target.value))}
                             />
                         </div>
@@ -620,7 +629,7 @@ export default function PropertiesPanel() {
                                 type="number"
                                 step="0.05"
                                 min="0.2"
-                                value={element.depth !== undefined ? element.depth : 1}
+                                value={element.depth !== undefined ? element.depth : (furniturePreset?.depth || 1)}
                                 onChange={(e) => handleChange('depth', parseFloat(e.target.value))}
                             />
                         </div>
@@ -630,7 +639,7 @@ export default function PropertiesPanel() {
                                 type="number"
                                 step="0.05"
                                 min="0.2"
-                                value={element.height !== undefined ? element.height : 0.5}
+                                value={element.height !== undefined ? element.height : (furniturePreset?.height || 0.5)}
                                 onChange={(e) => handleChange('height', parseFloat(e.target.value))}
                             />
                         </div>

@@ -144,6 +144,19 @@
     gap: 0.5rem;
 }
 
+.tool-subsection + .tool-subsection {
+    margin-top: 0.9rem;
+}
+
+.tool-subtitle {
+    display: inline-flex;
+    margin-bottom: 0.45rem;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.48);
+}
+
 .tool-card {
     display: flex;
     flex-direction: column;
@@ -165,6 +178,25 @@
     background: rgba(100, 150, 255, 0.2);
     border-color: #4a90e2;
     color: #4a90e2;
+}
+
+.tool-card-gastronomy {
+    background: linear-gradient(180deg, rgba(188, 214, 255, 0.09), rgba(117, 140, 173, 0.08));
+}
+
+.tool-card-glyph {
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #e8f4ff;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
 }
 
 .tool-card span {
