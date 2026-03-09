@@ -4,7 +4,18 @@ import { OrbitControls, Environment, ContactShadows, Box, Plane, Cylinder as Cyl
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import * as THREE from 'three';
-import { buildRoomWallSegments, getWallSegment, resolveDoorPlacement, subtractWallOverlapsFromRoomSegments, type FittedDoorPlacement, type RoomWallSegment } from '../../utils/buildingGeometry';
+import {
+    buildRoomWallSegments,
+    getRectIntersection,
+    getStairOpeningFloorId,
+    getWallSegment,
+    resolveDoorPlacement,
+    subtractRectHolesFromRect,
+    subtractWallOverlapsFromRoomSegments,
+    type FittedDoorPlacement,
+    type Rect2D,
+    type RoomWallSegment
+} from '../../utils/buildingGeometry';
 
 const DEFAULT_LEVEL_HEIGHT = 3.2;
 const WALL_THICKNESS = 0.18;
@@ -253,13 +264,22 @@ function buildSceneBounds(
     return bounds;
 }
 
-function Room3D({ room, floor }: { room: Room; floor: Floor }) {
+function Room3D({ room, floor, openings = [] }: { room: Room; floor: Floor; openings?: Rect2D[] }) {
+    const floorPatches = useMemo(
+        () => subtractRectHolesFromRect({ x: room.x, y: room.y, width: room.width, height: room.height }, openings),
+        [openings, room.height, room.width, room.x, room.y]
+    );
+
     return (
-        <group position={[room.x + room.width / 2, floor.elevation, room.y + room.height / 2]}>
-            <Box args={[room.width, FLOOR_THICKNESS, room.height]} position={[0, -FLOOR_THICKNESS / 2, 0]} castShadow receiveShadow>
-                <meshStandardMaterial color={room.color || '#dddddd'} roughness={0.85} />
-            </Box>
-        </group>
+        <>
+            {floorPatches.map((patch, index) => (
+                <group key={`${room.id}-patch-${index}`} position={[patch.x + patch.width / 2, floor.elevation, patch.y + patch.height / 2]}>
+                    <Box args={[patch.width, FLOOR_THICKNESS, patch.height]} position={[0, -FLOOR_THICKNESS / 2, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color={room.color || '#dddddd'} roughness={0.85} />
+                    </Box>
+                </group>
+            ))}
+        </>
     );
 }
 
@@ -587,6 +607,37 @@ export default function Canvas3D() {
             .filter((entry): entry is { door: Door; placement: FittedDoorPlacement } => entry !== null),
         [doors, floorMap, rooms, walls]
     );
+    const stairOpeningsByFloor = useMemo(() => {
+        const nextMap = new Map<string, Rect2D[]>();
+
+        visibleStairs.forEach((stair) => {
+            const openingFloorId = getStairOpeningFloorId(stair, floorMap);
+            if (!openingFloorId) return;
+
+            const openings = nextMap.get(openingFloorId) || [];
+            openings.push({
+                x: stair.x,
+                y: stair.y,
+                width: stair.width,
+                height: stair.height
+            });
+            nextMap.set(openingFloorId, openings);
+        });
+
+        return nextMap;
+    }, [floorMap, visibleStairs]);
+    const roomFloorOpeningsMap = useMemo(() => {
+        const nextMap = new Map<string, Rect2D[]>();
+
+        visibleRooms.forEach((room) => {
+            const openings = (stairOpeningsByFloor.get(room.floorId) || [])
+                .map((opening) => getRectIntersection(room, opening))
+                .filter((opening): opening is Rect2D => opening !== null);
+            nextMap.set(room.id, openings);
+        });
+
+        return nextMap;
+    }, [stairOpeningsByFloor, visibleRooms]);
     const wallDoorMap = useMemo(() => {
         const nextMap = new Map<string, WallOpening[]>();
 
@@ -716,7 +767,14 @@ export default function Canvas3D() {
 
                 {visibleRooms.map((room) => {
                     const floor = floorMap.get(room.floorId);
-                    return floor ? <Room3D key={room.id} room={room} floor={floor} /> : null;
+                    return floor ? (
+                        <Room3D
+                            key={room.id}
+                            room={room}
+                            floor={floor}
+                            openings={roomFloorOpeningsMap.get(room.id) || []}
+                        />
+                    ) : null;
                 })}
 
                 {roomWallSegments.map((segment) => {

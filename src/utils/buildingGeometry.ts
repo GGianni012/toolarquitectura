@@ -6,6 +6,7 @@ const DEFAULT_ROOM_WALL_HEIGHT = 3.2;
 const ROOM_EDGES: RoomEdge[] = ['north', 'south', 'east', 'west'];
 
 export type Point2D = { x: number; y: number };
+export type Rect2D = { x: number; y: number; width: number; height: number };
 export type SegmentOrientation = 'horizontal' | 'vertical' | 'angled';
 
 export interface DoorHostSegment {
@@ -57,6 +58,13 @@ export interface RoomWallSegment {
 
 function clamp(value: number, min: number, max: number) {
     return Math.min(Math.max(value, min), max);
+}
+
+function isPointInsideRect(point: Point2D, rect: Rect2D) {
+    return point.x >= rect.x - EPSILON
+        && point.x <= rect.x + rect.width + EPSILON
+        && point.y >= rect.y - EPSILON
+        && point.y <= rect.y + rect.height + EPSILON;
 }
 
 function keyForNumber(value: number) {
@@ -205,6 +213,123 @@ export function resolveDoorPlacement(door: Door, rooms: Room[], walls: Wall[]) {
     if (!host) return null;
 
     return fitDoorToHostSegment(host, door.width, door.doorHeight || 2.1, door.ratio);
+}
+
+export function getRectIntersection(a: Rect2D, b: Rect2D): Rect2D | null {
+    const x = Math.max(a.x, b.x);
+    const y = Math.max(a.y, b.y);
+    const right = Math.min(a.x + a.width, b.x + b.width);
+    const bottom = Math.min(a.y + a.height, b.y + b.height);
+
+    if (right - x <= EPSILON || bottom - y <= EPSILON) {
+        return null;
+    }
+
+    return {
+        x,
+        y,
+        width: right - x,
+        height: bottom - y
+    };
+}
+
+export function findBestRoomForRect(rect: Rect2D, rooms: Room[], floorId: string) {
+    const floorRooms = rooms.filter((room) => room.floorId === floorId);
+    if (floorRooms.length === 0) return null;
+
+    const center = {
+        x: rect.x + rect.width / 2,
+        y: rect.y + rect.height / 2
+    };
+
+    const containingRoom = floorRooms.find((room) => isPointInsideRect(center, room));
+    if (containingRoom) {
+        return containingRoom;
+    }
+
+    let bestRoom: Room | null = null;
+    let bestOverlap = 0;
+
+    floorRooms.forEach((room) => {
+        const overlap = getRectIntersection(rect, room);
+        if (!overlap) return;
+
+        const area = overlap.width * overlap.height;
+        if (area > bestOverlap) {
+            bestOverlap = area;
+            bestRoom = room;
+        }
+    });
+
+    return bestRoom;
+}
+
+export function fitRectInsideRoom(rect: Rect2D, room: Room): Rect2D {
+    const width = Math.min(rect.width, room.width);
+    const height = Math.min(rect.height, room.height);
+
+    return {
+        x: clamp(rect.x, room.x, room.x + room.width - width),
+        y: clamp(rect.y, room.y, room.y + room.height - height),
+        width,
+        height
+    };
+}
+
+export function subtractRectHolesFromRect(bounds: Rect2D, holes: Rect2D[]) {
+    const clippedHoles = holes
+        .map((hole) => getRectIntersection(bounds, hole))
+        .filter((hole): hole is Rect2D => hole !== null);
+
+    if (clippedHoles.length === 0) {
+        return [bounds];
+    }
+
+    const xs = uniqueSorted([
+        bounds.x,
+        bounds.x + bounds.width,
+        ...clippedHoles.flatMap((hole) => [hole.x, hole.x + hole.width])
+    ]);
+    const ys = uniqueSorted([
+        bounds.y,
+        bounds.y + bounds.height,
+        ...clippedHoles.flatMap((hole) => [hole.y, hole.y + hole.height])
+    ]);
+
+    const patches: Rect2D[] = [];
+
+    for (let xIndex = 0; xIndex < xs.length - 1; xIndex += 1) {
+        for (let yIndex = 0; yIndex < ys.length - 1; yIndex += 1) {
+            const x = xs[xIndex];
+            const y = ys[yIndex];
+            const width = xs[xIndex + 1] - x;
+            const height = ys[yIndex + 1] - y;
+
+            if (width <= EPSILON || height <= EPSILON) continue;
+
+            const midpoint = { x: x + width / 2, y: y + height / 2 };
+            const insideHole = clippedHoles.some((hole) => isPointInsideRect(midpoint, hole));
+            if (insideHole) continue;
+
+            patches.push({ x, y, width, height });
+        }
+    }
+
+    return patches;
+}
+
+export function getStairOpeningFloorId(
+    stair: { floorId: string; targetFloorId: string },
+    floorsById: Map<string, Floor>
+) {
+    const sourceFloor = floorsById.get(stair.floorId);
+    const targetFloor = floorsById.get(stair.targetFloorId);
+
+    if (!sourceFloor || !targetFloor) {
+        return null;
+    }
+
+    return sourceFloor.elevation >= targetFloor.elevation ? sourceFloor.id : targetFloor.id;
 }
 
 export function findClosestDoorHost(

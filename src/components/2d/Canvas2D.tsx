@@ -2,7 +2,17 @@ import { useStore, Room, Wall, Furniture, Door, Cylinder, Surface, Stair, FloorR
 import { useDrag } from '@use-gesture/react';
 import { Sofa, BedDouble, Trees } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { findClosestDoorHost, fitDoorToHostSegment, resolveDoorPlacement, type DoorHostCandidate } from '../../utils/buildingGeometry';
+import {
+    findBestRoomForRect,
+    findClosestDoorHost,
+    fitDoorToHostSegment,
+    fitRectInsideRoom,
+    getRectIntersection,
+    getStairOpeningFloorId,
+    resolveDoorPlacement,
+    type DoorHostCandidate,
+    type Rect2D
+} from '../../utils/buildingGeometry';
 import './Canvas2D.css';
 
 const GRID_SIZE = 50;
@@ -11,6 +21,8 @@ const FREE_STEP = 0.01;
 const SNAP_THRESHOLD = 0.2;
 const CANVAS_WORLD_SIZE = 12000;
 const DOOR_PLACE_THRESHOLD = 0.45;
+const FLOOR_GHOST_MIN_OPACITY = 0.1;
+const FLOOR_GHOST_MAX_OPACITY = 0.28;
 
 type Point = { x: number; y: number };
 type SnapGuide = { orientation: 'vertical' | 'horizontal'; position: number };
@@ -32,6 +44,35 @@ function toMeters(units: number) {
 
 function getAdaptiveTextSize(scale: number, basePx: number) {
     return clamp(basePx / Math.max(scale, 0.35), 4, 42);
+}
+
+function getGhostFloorOpacity(distance: number) {
+    const falloff = 1 / Math.max(distance, 1);
+    return clamp(FLOOR_GHOST_MAX_OPACITY * falloff, FLOOR_GHOST_MIN_OPACITY, FLOOR_GHOST_MAX_OPACITY);
+}
+
+function integrateRectWithRooms(rect: Rect2D, rooms: Room[], floorId: string) {
+    const hostRoom = findBestRoomForRect(rect, rooms, floorId);
+    if (!hostRoom) {
+        return rect;
+    }
+
+    return fitRectInsideRoom(rect, hostRoom);
+}
+
+function renderRoomOpenings(openings: Rect2D[], room: Room) {
+    return openings.map((opening, index) => (
+        <div
+            key={`${room.id}-opening-${index}`}
+            className="room-opening"
+            style={{
+                left: (opening.x - room.x) * GRID_SIZE,
+                top: (opening.y - room.y) * GRID_SIZE,
+                width: opening.width * GRID_SIZE,
+                height: opening.height * GRID_SIZE
+            }}
+        />
+    ));
 }
 
 function findNearestCandidate(value: number, candidates: number[]): CandidateMatch | null {
@@ -461,12 +502,14 @@ function RoomElement({
     room,
     scale,
     rooms,
-    setSnapGuides
+    setSnapGuides,
+    openings = []
 }: {
     room: Room;
     scale: number;
     rooms: Room[];
     setSnapGuides: (guides: SnapGuide[]) => void;
+    openings?: Rect2D[];
 }) {
     const { updateRoom, interactMode, selectedElement, setSelectedElement } = useStore();
     const isSelected = selectedElement?.id === room.id;
@@ -565,6 +608,7 @@ function RoomElement({
                 boxShadow: isSelected ? '0 0 0 3px #fca5a5' : undefined
             }}
         >
+            {renderRoomOpenings(openings, room)}
             {showName && (
                 <div className="room-label" style={{ fontSize: labelFontSize, padding: `0 ${getAdaptiveTextSize(scale, 8)}px` }}>
                     {room.name}
@@ -778,7 +822,7 @@ function DoorElement({ door, scale }: { door: Door; scale: number }) {
 }
 
 function StairElement({ stair, scale }: { stair: Stair; scale: number }) {
-    const { floors, updateStair, interactMode, selectedElement, setSelectedElement } = useStore();
+    const { floors, rooms, updateStair, interactMode, selectedElement, setSelectedElement } = useStore();
     const isSelected = selectedElement?.id === stair.id;
     const targetFloor = floors.find((floor) => floor.id === stair.targetFloorId);
 
@@ -786,9 +830,16 @@ function StairElement({ stair, scale }: { stair: Stair; scale: number }) {
         if (interactMode !== 'select' || stair.locked) return memo;
         if (first || !memo) memo = { x: stair.x, y: stair.y };
 
-        updateStair(stair.id, {
+        const nextRect = integrateRectWithRooms({
             x: roundUnit(memo.x + (mx / scale) / GRID_SIZE),
-            y: roundUnit(memo.y + (my / scale) / GRID_SIZE)
+            y: roundUnit(memo.y + (my / scale) / GRID_SIZE),
+            width: stair.width,
+            height: stair.height
+        }, rooms, stair.floorId);
+
+        updateStair(stair.id, {
+            x: nextRect.x,
+            y: nextRect.y
         });
 
         return memo;
@@ -958,16 +1009,97 @@ export default function Canvas2D() {
     const [doorPreview, setDoorPreview] = useState<DoorHostCandidate | null>(null);
 
     const activeFloor = floors.find((floor) => floor.id === activeFloorId);
+    const floorsById = useMemo(
+        () => new Map(floors.map((floor) => [floor.id, floor])),
+        [floors]
+    );
+    const resolvedDoors = useMemo(
+        () => doors
+            .map((door) => {
+                const placement = resolveDoorPlacement(door, rooms, walls);
+                return placement ? { door, placement } : null;
+            })
+            .filter((entry): entry is { door: Door; placement: NonNullable<ReturnType<typeof resolveDoorPlacement>> } => entry !== null),
+        [doors, rooms, walls]
+    );
+    const stairOpeningsByFloor = useMemo(() => {
+        const nextMap = new Map<string, Rect2D[]>();
+
+        stairs.forEach((stair) => {
+            const openingFloorId = getStairOpeningFloorId(stair, floorsById);
+            if (!openingFloorId) return;
+
+            const openings = nextMap.get(openingFloorId) || [];
+            openings.push({
+                x: stair.x,
+                y: stair.y,
+                width: stair.width,
+                height: stair.height
+            });
+            nextMap.set(openingFloorId, openings);
+        });
+
+        return nextMap;
+    }, [floorsById, stairs]);
     const visibleRooms = rooms.filter((room) => room.floorId === activeFloorId);
     const visibleFurniture = furniture.filter((item) => item.floorId === activeFloorId);
     const visibleWalls = walls.filter((wall) => wall.floorId === activeFloorId);
     const visibleDoors = useMemo(
-        () => doors.filter((door) => resolveDoorPlacement(door, rooms, walls)?.floorId === activeFloorId),
-        [activeFloorId, doors, rooms, walls]
+        () => resolvedDoors.filter((entry) => entry.placement.floorId === activeFloorId).map((entry) => entry.door),
+        [activeFloorId, resolvedDoors]
     );
     const visibleCylinders = cylinders.filter((cylinder) => cylinder.floorId === activeFloorId);
     const visibleSurfaces = surfaces.filter((surface) => surface.floorId === activeFloorId);
     const visibleStairs = stairs.filter((stair) => stair.floorId === activeFloorId);
+    const roomOpeningsById = useMemo(() => {
+        const nextMap = new Map<string, Rect2D[]>();
+        const floorOpenings = stairOpeningsByFloor.get(activeFloorId) || [];
+
+        visibleRooms.forEach((room) => {
+            const openings = floorOpenings
+                .map((opening) => getRectIntersection(room, opening))
+                .filter((opening): opening is Rect2D => opening !== null);
+            nextMap.set(room.id, openings);
+        });
+
+        return nextMap;
+    }, [activeFloorId, stairOpeningsByFloor, visibleRooms]);
+    const ghostFloors = useMemo(() => {
+        const orderedFloors = [...floors].sort((a, b) => a.elevation - b.elevation);
+        const activeIndex = orderedFloors.findIndex((floor) => floor.id === activeFloorId);
+
+        return orderedFloors
+            .filter((floor) => floor.id !== activeFloorId)
+            .map((floor, index) => {
+                const floorIndex = orderedFloors.findIndex((item) => item.id === floor.id);
+                const distance = Math.abs(floorIndex - activeIndex) || Math.abs(index - activeIndex) || 1;
+                const floorRooms = rooms.filter((room) => room.floorId === floor.id);
+                const floorOpenings = stairOpeningsByFloor.get(floor.id) || [];
+                const roomOpenings = new Map<string, Rect2D[]>();
+
+                floorRooms.forEach((room) => {
+                    roomOpenings.set(
+                        room.id,
+                        floorOpenings
+                            .map((opening) => getRectIntersection(room, opening))
+                            .filter((opening): opening is Rect2D => opening !== null)
+                    );
+                });
+
+                return {
+                    floor,
+                    opacity: getGhostFloorOpacity(distance),
+                    relation: floorIndex < activeIndex ? 'below' as const : 'above' as const,
+                    rooms: floorRooms,
+                    walls: walls.filter((wall) => wall.floorId === floor.id),
+                    cylinders: cylinders.filter((cylinder) => cylinder.floorId === floor.id),
+                    surfaces: surfaces.filter((surface) => surface.floorId === floor.id),
+                    stairs: stairs.filter((stair) => stair.floorId === floor.id),
+                    doors: resolvedDoors.filter((entry) => entry.placement.floorId === floor.id),
+                    roomOpenings
+                };
+            });
+    }, [activeFloorId, cylinders, floors, resolvedDoors, rooms, stairOpeningsByFloor, stairs, surfaces, walls]);
 
     const defaultTargetFloorId = useMemo(() => {
         const sortedFloors = [...floors].sort((a, b) => a.elevation - b.elevation);
@@ -1172,10 +1304,16 @@ export default function Canvas2D() {
                     alert('Create another level first so the stair has a target.');
                     return;
                 }
-                addStair({
-                    ...payload,
+                const fittedRect = integrateRectWithRooms({
                     x: point.x,
                     y: point.y,
+                    width: payload.width,
+                    height: payload.height
+                }, visibleRooms, activeFloorId);
+                addStair({
+                    ...payload,
+                    x: fittedRect.x,
+                    y: fittedRect.y,
                     targetFloorId: payload.targetFloorId || defaultTargetFloorId
                 });
             }
@@ -1244,6 +1382,93 @@ export default function Canvas2D() {
                 {activeFloor?.reference && (
                     <ReferenceLayer floorId={activeFloor.id} reference={activeFloor.reference} scale={scale} />
                 )}
+
+                <div className="ghost-floors-layer" style={{ width: CANVAS_WORLD_SIZE, height: CANVAS_WORLD_SIZE }}>
+                    {ghostFloors.map((ghostFloor) => (
+                        <div
+                            key={ghostFloor.floor.id}
+                            className={`ghost-floor ghost-floor-${ghostFloor.relation}`}
+                            style={{ opacity: ghostFloor.opacity }}
+                        >
+                            <svg
+                                className="ghost-floor-svg"
+                                style={{ width: CANVAS_WORLD_SIZE, height: CANVAS_WORLD_SIZE }}
+                            >
+                                {ghostFloor.surfaces.map((surface) => (
+                                    <polygon
+                                        key={surface.id}
+                                        points={surface.points.map((point) => `${point.x * GRID_SIZE},${point.y * GRID_SIZE}`).join(' ')}
+                                        className="ghost-surface"
+                                    />
+                                ))}
+                                {ghostFloor.walls.map((wall) => (
+                                    <line
+                                        key={wall.id}
+                                        x1={wall.startX * GRID_SIZE + GRID_SIZE / 2}
+                                        y1={wall.startY * GRID_SIZE + GRID_SIZE / 2}
+                                        x2={wall.endX * GRID_SIZE + GRID_SIZE / 2}
+                                        y2={wall.endY * GRID_SIZE + GRID_SIZE / 2}
+                                        className="ghost-wall"
+                                    />
+                                ))}
+                                {ghostFloor.doors.map(({ door, placement }) => (
+                                    <line
+                                        key={door.id}
+                                        x1={(placement.center.x - ((placement.width / 2) * Math.cos(placement.angle))) * GRID_SIZE}
+                                        y1={(placement.center.y - ((placement.width / 2) * Math.sin(placement.angle))) * GRID_SIZE}
+                                        x2={(placement.center.x + ((placement.width / 2) * Math.cos(placement.angle))) * GRID_SIZE}
+                                        y2={(placement.center.y + ((placement.width / 2) * Math.sin(placement.angle))) * GRID_SIZE}
+                                        className="ghost-door"
+                                    />
+                                ))}
+                            </svg>
+
+                            <div className="ghost-floor-content" style={{ width: CANVAS_WORLD_SIZE, height: CANVAS_WORLD_SIZE }}>
+                                {ghostFloor.rooms.map((room) => (
+                                    <div
+                                        key={room.id}
+                                        className="ghost-room"
+                                        style={{
+                                            left: room.x * GRID_SIZE,
+                                            top: room.y * GRID_SIZE,
+                                            width: room.width * GRID_SIZE,
+                                            height: room.height * GRID_SIZE,
+                                            backgroundColor: room.color || '#dbe7ff'
+                                        }}
+                                    >
+                                        {renderRoomOpenings(ghostFloor.roomOpenings.get(room.id) || [], room)}
+                                    </div>
+                                ))}
+                                {ghostFloor.cylinders.map((cylinder) => (
+                                    <div
+                                        key={cylinder.id}
+                                        className="ghost-cylinder"
+                                        style={{
+                                            left: (cylinder.x - cylinder.radius) * GRID_SIZE,
+                                            top: (cylinder.y - cylinder.radius) * GRID_SIZE,
+                                            width: cylinder.radius * 2 * GRID_SIZE,
+                                            height: cylinder.radius * 2 * GRID_SIZE,
+                                            backgroundColor: cylinder.color || '#c9f2d0'
+                                        }}
+                                    />
+                                ))}
+                                {ghostFloor.stairs.map((stair) => (
+                                    <div
+                                        key={stair.id}
+                                        className="ghost-stair"
+                                        style={{
+                                            left: stair.x * GRID_SIZE,
+                                            top: stair.y * GRID_SIZE,
+                                            width: stair.width * GRID_SIZE,
+                                            height: stair.height * GRID_SIZE,
+                                            backgroundColor: stair.color || '#ffd166'
+                                        }}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                </div>
 
                 <svg
                     className="svg-measurements-layer"
@@ -1337,7 +1562,14 @@ export default function Canvas2D() {
 
                 <div className="canvas-2d-content" style={{ pointerEvents: interactMode === 'select' ? 'auto' : 'none', width: CANVAS_WORLD_SIZE, height: CANVAS_WORLD_SIZE }}>
                     {visibleRooms.map((room) => (
-                        <RoomElement key={room.id} room={room} scale={scale} rooms={visibleRooms} setSnapGuides={setSnapGuides} />
+                        <RoomElement
+                            key={room.id}
+                            room={room}
+                            scale={scale}
+                            rooms={visibleRooms}
+                            setSnapGuides={setSnapGuides}
+                            openings={roomOpeningsById.get(room.id) || []}
+                        />
                     ))}
                     {visibleCylinders.map((cylinder) => (
                         <CylinderElement key={cylinder.id} cylinder={cylinder} scale={scale} />
