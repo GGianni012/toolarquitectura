@@ -193,6 +193,15 @@ interface AppState {
     addStair: (stair: Omit<Stair, 'id' | 'floorId'> & { floorId?: string }) => void;
     updateStair: (id: string, data: Partial<Stair>) => void;
 
+    applyAutoTraceResult: (
+        floorId: string,
+        data: {
+            rooms?: Array<Omit<Room, 'id' | 'floorId'>>;
+            walls?: Array<Omit<Wall, 'id' | 'floorId'>>;
+            surfaces?: Array<Omit<Surface, 'id' | 'floorId'>>;
+        }
+    ) => void;
+
     removeElement: (id: string, type: ElementType) => void;
 }
 
@@ -381,6 +390,37 @@ export const useStore = create<AppState>()(persist((set) => ({
     })),
     updateStair: (id, data) => set((state) => withHistory(state, {
         stairs: state.stairs.map(s => s.id === id ? { ...s, ...data } : s)
+    })),
+
+    applyAutoTraceResult: (floorId, data) => set((state) => withHistory(state, {
+        rooms: [
+            ...state.rooms,
+            ...(data.rooms || []).map((room) => ({
+                ...room,
+                rotation: room.rotation ?? 0,
+                showWalls: room.showWalls ?? true,
+                hiddenWallEdges: room.hiddenWallEdges ?? [],
+                floorId,
+                id: generateId()
+            }))
+        ],
+        walls: [
+            ...state.walls,
+            ...(data.walls || []).map((wall) => ({
+                ...wall,
+                floorId,
+                id: generateId()
+            }))
+        ],
+        surfaces: [
+            ...state.surfaces,
+            ...(data.surfaces || []).map((surface) => ({
+                ...surface,
+                floorId,
+                id: generateId()
+            }))
+        ],
+        selectedElement: null
     })),
 
     removeElement: (id, type) => set((state) => {

@@ -1,7 +1,8 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { useStore, InteractMode } from '../store/useStore';
 import { Square, Circle, DoorOpen, MousePointer2, PenTool, Hexagon, Layers3, Plus, Eye, EyeOff, Upload, ArrowUpDown } from 'lucide-react';
 import { importReferenceFile } from '../utils/referenceImport';
+import { autoTraceReference } from '../utils/autoTraceReference';
 import { FURNITURE_PRESETS } from '../utils/furnitureCatalog';
 import './Sidebar.css';
 
@@ -41,6 +42,7 @@ export default function Sidebar() {
         addStair,
         addFloor,
         updateFloor,
+        applyAutoTraceResult,
         rooms,
         walls,
         floors,
@@ -50,6 +52,7 @@ export default function Sidebar() {
         setActiveFloor
     } = useStore();
     const importInputRef = useRef<HTMLInputElement>(null);
+    const [isTracingReference, setIsTracingReference] = useState(false);
     const activeFloor = floors.find((floor) => floor.id === activeFloorId);
     const sortedFloors = [...floors].sort((a, b) => a.elevation - b.elevation);
     const previousFloorById = new Map(
@@ -116,6 +119,31 @@ export default function Sidebar() {
         }
     };
 
+    const handleAutoTrace = async () => {
+        if (!activeFloor?.reference || isTracingReference) {
+            return;
+        }
+
+        try {
+            setIsTracingReference(true);
+            const result = await autoTraceReference(activeFloor.reference, {
+                wallHeight: activeFloor.height
+            });
+
+            if (result.walls.length === 0 && result.rooms.length === 0) {
+                alert('I could not read clear walls from that plan. Try increasing the reference scale first or use a higher-contrast image.');
+                return;
+            }
+
+            applyAutoTraceResult(activeFloor.id, result);
+            alert(`Auto trace created ${result.walls.length} walls and ${result.rooms.length} rooms. You can refine everything by hand afterwards.`);
+        } catch (error) {
+            alert(error instanceof Error ? error.message : 'Failed to auto trace the reference');
+        } finally {
+            setIsTracingReference(false);
+        }
+    };
+
     const tools = [
         { id: 'select', name: 'Select & Move', icon: <MousePointer2 size={24} />, mode: 'select' },
         { id: 'draw_wall', name: 'Draw Walls', icon: <PenTool size={24} />, mode: 'draw_wall' },
@@ -133,6 +161,14 @@ export default function Sidebar() {
                         <button className="mini-btn" onClick={handleImportClick}>
                             <Upload size={14} />
                             Import
+                        </button>
+                        <button
+                            className="mini-btn"
+                            onClick={handleAutoTrace}
+                            disabled={!activeFloor?.reference || isTracingReference}
+                            title={activeFloor?.reference ? 'Create editable walls and rooms from the active reference' : 'Import a reference first'}
+                        >
+                            {isTracingReference ? 'Tracing...' : 'Auto Trace'}
                         </button>
                         <button className="mini-btn" onClick={() => addFloor()}>
                             <Plus size={14} />
