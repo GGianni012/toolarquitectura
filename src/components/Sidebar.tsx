@@ -90,7 +90,7 @@ export default function Sidebar() {
     const tools = [
         { id: 'select', name: 'Select & Move', icon: <MousePointer2 size={24} />, mode: 'select' },
         { id: 'draw_wall', name: 'Draw Walls', icon: <PenTool size={24} />, mode: 'draw_wall' },
-        { id: 'draw_surface', name: 'Draw Area', icon: <Hexagon size={24} />, mode: 'draw_surface' },
+        { id: 'draw_surface', name: 'Draw Room', icon: <Hexagon size={24} />, mode: 'draw_surface' },
     ];
 
     return (
@@ -197,8 +197,8 @@ export default function Sidebar() {
                     <div
                         className="tool-card"
                         draggable
-                        onDragStart={(e) => handleDragStart(e, 'room', { width: 3, height: 3, rotation: 0, name: 'New Room', color: '#ffb8b8', wallHeight: 3 })}
-                        onClick={() => addRoom({ x: 2, y: 2, width: 3, height: 3, rotation: 0, name: 'New Room', color: '#ffb8b8', wallHeight: 3 })}
+                        onDragStart={(e) => handleDragStart(e, 'room', { width: 3, height: 3, rotation: 0, showWalls: false, name: 'New Room', color: '#ffb8b8', wallHeight: 3 })}
+                        onClick={() => addRoom({ x: 2, y: 2, width: 3, height: 3, rotation: 0, showWalls: false, name: 'New Room', color: '#ffb8b8', wallHeight: 3 })}
                     >
                         <Square size={24} />
                         <span>Room</span>

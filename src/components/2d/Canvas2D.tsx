@@ -754,7 +754,9 @@ function RoomElement({
                 backgroundColor: room.color || '#fff',
                 boxShadow: isSelected ? '0 0 0 3px #fca5a5' : undefined,
                 transform: `rotate(${room.rotation || 0}deg)`,
-                transformOrigin: 'center center'
+                transformOrigin: 'center center',
+                borderStyle: room.showWalls === false ? 'dashed' : 'solid',
+                borderColor: room.showWalls === false ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.8)'
             }}
         >
             {renderRoomOpenings(openings, room)}
@@ -820,6 +822,25 @@ function FurnitureElement({
     }, {
         enabled: interactMode === 'select' && !item.locked
     });
+    const bindResize = (axis: 'width' | 'depth') => useDrag(({ movement: [mx, my], first, memo, event }) => {
+        if (interactMode !== 'select' || item.locked) return memo;
+        event.stopPropagation();
+        if (first || !memo) memo = { width, depth };
+
+        if (axis === 'width') {
+            updateFurniture(item.id, {
+                width: Math.max(0.2, roundUnit(memo.width + (mx / scale) / GRID_SIZE))
+            });
+        } else {
+            updateFurniture(item.id, {
+                depth: Math.max(0.2, roundUnit(memo.depth + (my / scale) / GRID_SIZE))
+            });
+        }
+
+        return memo;
+    }, { enabled: interactMode === 'select' && !item.locked });
+    const bindWidth = bindResize('width');
+    const bindDepth = bindResize('depth');
 
     const getIcon = () => {
         switch (item.type) {
@@ -850,6 +871,12 @@ function FurnitureElement({
             }}
         >
             {getIcon()}
+            {interactMode === 'select' && !item.locked && isSelected && (
+                <>
+                    <div {...bindWidth()} className="resize-handle r" title="Resize width" />
+                    <div {...bindDepth()} className="resize-handle b" title="Resize depth" />
+                </>
+            )}
         </div>
     );
 }
@@ -1042,6 +1069,25 @@ function StairElement({
 
         return memo;
     }, { enabled: interactMode === 'select' && !stair.locked });
+    const bindResize = (axis: 'width' | 'height') => useDrag(({ movement: [mx, my], first, memo, event }) => {
+        if (interactMode !== 'select' || stair.locked) return memo;
+        event.stopPropagation();
+        if (first || !memo) memo = { width: stair.width, height: stair.height };
+
+        if (axis === 'width') {
+            updateStair(stair.id, {
+                width: Math.max(1, roundUnit(memo.width + (mx / scale) / GRID_SIZE))
+            });
+        } else {
+            updateStair(stair.id, {
+                height: Math.max(2, roundUnit(memo.height + (my / scale) / GRID_SIZE))
+            });
+        }
+
+        return memo;
+    }, { enabled: interactMode === 'select' && !stair.locked });
+    const bindWidth = bindResize('width');
+    const bindHeight = bindResize('height');
     const screenWidth = stair.width * GRID_SIZE * scale;
     const screenHeight = stair.height * GRID_SIZE * scale;
     const showArrow = screenWidth > 60 && screenHeight > 40;
@@ -1073,6 +1119,12 @@ function StairElement({
                 <div className="stair-label" style={{ fontSize: getAdaptiveTextSize(scale, 12) }}>
                     {targetFloor ? targetFloor.name : 'Target floor'}
                 </div>
+            )}
+            {interactMode === 'select' && !stair.locked && isSelected && (
+                <>
+                    <div {...bindWidth()} className="resize-handle r" title="Resize width" />
+                    <div {...bindHeight()} className="resize-handle b" title="Resize run" />
+                </>
             )}
         </div>
     );
@@ -1174,6 +1226,137 @@ function SurfaceElement({ surface, scale }: { surface: Surface; scale: number })
     );
 }
 
+function PolygonRoomElement({
+    room,
+    scale,
+    distanceCandidates,
+    setDistanceGuides
+}: {
+    room: Room;
+    scale: number;
+    distanceCandidates: Array<{ id: string; rect: Rect2D }>;
+    setDistanceGuides: (guides: DistanceGuide[]) => void;
+}) {
+    const { interactMode, selectedElement, setSelectedElement, updateRoom } = useStore();
+    const isSelected = selectedElement?.id === room.id;
+    const roomPoints = room.points || [];
+    const bind = useDrag(({ movement: [mx, my], first, memo }) => {
+        if (interactMode !== 'select' || room.locked || roomPoints.length < 3) return memo;
+        if (first || !memo) memo = { points: roomPoints.map((point) => ({ ...point })) };
+
+        const dx = roundUnit((mx / scale) / GRID_SIZE);
+        const dy = roundUnit((my / scale) / GRID_SIZE);
+        const nextPoints = memo.points.map((point: Point) => ({ x: point.x + dx, y: point.y + dy }));
+        const nextRoom = { ...room, points: nextPoints };
+        const nextBounds = getRoomBounds(nextRoom);
+
+        setDistanceGuides(
+            buildDistanceGuides(
+                nextBounds,
+                distanceCandidates.filter((candidate) => candidate.id !== room.id)
+            )
+        );
+        updateRoom(room.id, { points: nextPoints, ...nextBounds });
+
+        return memo;
+    }, { enabled: interactMode === 'select' && !room.locked });
+
+    if (roomPoints.length < 3) return null;
+
+    const pointsStr = roomPoints.map((point) => `${point.x * GRID_SIZE},${point.y * GRID_SIZE}`).join(' ');
+    const bounds = getRoomBounds(room);
+    const centerX = (bounds.x + bounds.width / 2) * GRID_SIZE;
+    const centerY = (bounds.y + bounds.height / 2) * GRID_SIZE;
+    const bindProps: any = bind();
+
+    return (
+        <g>
+            <polygon
+                {...bindProps}
+                onPointerDown={(e) => {
+                    e.stopPropagation();
+                    if (interactMode === 'select') {
+                        setSelectedElement({ id: room.id, type: 'room' });
+                    }
+                    bindProps.onPointerDown?.(e);
+                }}
+                points={pointsStr}
+                fill={room.color || 'rgba(255, 184, 184, 0.58)'}
+                stroke={isSelected ? '#fca5a5' : (room.showWalls === false ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.82)')}
+                strokeWidth={isSelected ? 3 / scale : 2 / scale}
+                strokeDasharray={room.showWalls === false ? `${10 / scale} ${8 / scale}` : undefined}
+                style={{ cursor: interactMode === 'select' ? (room.locked ? 'pointer' : 'grab') : 'default', pointerEvents: interactMode === 'select' ? 'all' : 'none' }}
+            />
+            <text
+                x={centerX}
+                y={centerY}
+                fill="rgba(255,255,255,0.92)"
+                fontSize={getAdaptiveTextSize(scale, 13)}
+                fontWeight="700"
+                textAnchor="middle"
+                style={{ pointerEvents: 'none', textShadow: '0px 2px 4px rgba(0,0,0,0.8)' }}
+            >
+                {room.name}
+            </text>
+            {isSelected && roomPoints.map((point, index) => {
+                const nextPoint = roomPoints[(index + 1) % roomPoints.length];
+                const insertPoint = {
+                    x: roundUnit((point.x + nextPoint.x) / 2),
+                    y: roundUnit((point.y + nextPoint.y) / 2)
+                };
+
+                return (
+                    <g key={`${room.id}-edge-${index}`}>
+                        <line
+                            x1={point.x * GRID_SIZE}
+                            y1={point.y * GRID_SIZE}
+                            x2={nextPoint.x * GRID_SIZE}
+                            y2={nextPoint.y * GRID_SIZE}
+                            stroke="rgba(255,255,255,0.75)"
+                            strokeWidth={1.5 / scale}
+                            strokeDasharray={`${8 / scale} ${6 / scale}`}
+                            style={{ pointerEvents: 'none' }}
+                        />
+                        {!room.locked && (
+                            <EdgeInsertHandle
+                                x={insertPoint.x * GRID_SIZE}
+                                y={insertPoint.y * GRID_SIZE}
+                                scale={scale}
+                                onInsert={() => {
+                                    const nextPoints = [...roomPoints];
+                                    nextPoints.splice(index + 1, 0, insertPoint);
+                                    const nextBounds = getRoomBounds({ ...room, points: nextPoints });
+                                    updateRoom(room.id, { points: nextPoints, ...nextBounds });
+                                }}
+                            />
+                        )}
+                    </g>
+                );
+            })}
+            {isSelected && !room.locked && roomPoints.map((point, index) => (
+                <PointHandle
+                    key={`${room.id}-point-${index}`}
+                    x={point.x * GRID_SIZE}
+                    y={point.y * GRID_SIZE}
+                    scale={scale}
+                    onDragMove={(mx, my, first, memo) => {
+                        if (first || !memo) memo = { x: point.x, y: point.y };
+                        const newPoint = {
+                            x: roundUnit(memo.x + (mx / scale) / GRID_SIZE),
+                            y: roundUnit(memo.y + (my / scale) / GRID_SIZE)
+                        };
+                        const nextPoints = [...roomPoints];
+                        nextPoints[index] = newPoint;
+                        const nextBounds = getRoomBounds({ ...room, points: nextPoints });
+                        updateRoom(room.id, { points: nextPoints, ...nextBounds });
+                        return memo;
+                    }}
+                />
+            ))}
+        </g>
+    );
+}
+
 export default function Canvas2D() {
     const {
         floors,
@@ -1190,7 +1373,6 @@ export default function Canvas2D() {
         addRoom,
         addFurniture,
         addCylinder,
-        addSurface,
         addStair,
         interactMode,
         setSelectedElement
@@ -1398,11 +1580,12 @@ export default function Canvas2D() {
             const host = findClosestDoorHost(point, visibleRooms, visibleWalls, activeFloorId, DOOR_PLACE_THRESHOLD);
             if (!host) return;
 
-            if (host.hostKind === 'room' && host.edge) {
+            if (host.hostKind === 'room' && (host.edge || host.edgeIndex !== undefined)) {
                 addDoor({
                     hostKind: 'room',
                     roomId: host.hostId,
                     edge: host.edge,
+                    edgeIndex: host.edgeIndex,
                     ratio: host.ratio,
                     width: 0.9,
                     doorHeight: 2.1,
@@ -1436,7 +1619,20 @@ export default function Canvas2D() {
 
             const firstPoint = drawingSurface.points[0];
             if (Math.hypot(point.x - firstPoint.x, point.y - firstPoint.y) <= 1 && drawingSurface.points.length >= 3) {
-                addSurface({ points: drawingSurface.points });
+                const xs = drawingSurface.points.map((item) => item.x);
+                const ys = drawingSurface.points.map((item) => item.y);
+                addRoom({
+                    x: Math.min(...xs),
+                    y: Math.min(...ys),
+                    width: Math.max(...xs) - Math.min(...xs),
+                    height: Math.max(...ys) - Math.min(...ys),
+                    points: drawingSurface.points,
+                    rotation: 0,
+                    showWalls: false,
+                    wallHeight: 3,
+                    name: `Room ${visibleRooms.length + 1}`,
+                    color: '#ffb8b8'
+                });
                 setDrawingSurface(null);
                 return;
             }
@@ -1559,7 +1755,9 @@ export default function Canvas2D() {
 
     const helpText = interactMode === 'place_door'
         ? 'Door tool: click a room edge or drawn wall to place a door.'
-        : 'Pan: Space + drag or Alt + drag. Zoom: pinch or Ctrl + wheel. Grid is guide-only.';
+        : interactMode === 'draw_surface'
+            ? 'Draw Room: click to place points, then click the first point again to close the modular room.'
+            : 'Pan: Space + drag or Alt + drag. Zoom: pinch or Ctrl + wheel. Grid is guide-only.';
 
     const previewDoor = doorPreview
         ? fitDoorToHostSegment(doorPreview, 0.9, 2.1, doorPreview.ratio)
@@ -1620,6 +1818,14 @@ export default function Canvas2D() {
                                         className="ghost-surface"
                                     />
                                 ))}
+                                {ghostFloor.rooms.filter((room) => room.points && room.points.length >= 3).map((room) => (
+                                    <polygon
+                                        key={room.id}
+                                        points={(room.points || []).map((point) => `${point.x * GRID_SIZE},${point.y * GRID_SIZE}`).join(' ')}
+                                        className="ghost-room-polygon"
+                                        fill={room.color || '#dbe7ff'}
+                                    />
+                                ))}
                                 {ghostFloor.walls.map((wall) => (
                                     <line
                                         key={wall.id}
@@ -1644,21 +1850,23 @@ export default function Canvas2D() {
 
                             <div className="ghost-floor-content" style={{ width: CANVAS_WORLD_SIZE, height: CANVAS_WORLD_SIZE }}>
                                 {ghostFloor.rooms.map((room) => (
-                                    <div
-                                        key={room.id}
-                                        className="ghost-room"
-                                        style={{
-                                            left: room.x * GRID_SIZE,
-                                            top: room.y * GRID_SIZE,
-                                            width: room.width * GRID_SIZE,
-                                            height: room.height * GRID_SIZE,
-                                            backgroundColor: room.color || '#dbe7ff',
-                                            transform: `rotate(${room.rotation || 0}deg)`,
-                                            transformOrigin: 'center center'
-                                        }}
-                                    >
-                                        {renderRoomOpenings(ghostFloor.roomOpenings.get(room.id) || [], room)}
-                                    </div>
+                                    room.points && room.points.length >= 3 ? null : (
+                                        <div
+                                            key={room.id}
+                                            className="ghost-room"
+                                            style={{
+                                                left: room.x * GRID_SIZE,
+                                                top: room.y * GRID_SIZE,
+                                                width: room.width * GRID_SIZE,
+                                                height: room.height * GRID_SIZE,
+                                                backgroundColor: room.color || '#dbe7ff',
+                                                transform: `rotate(${room.rotation || 0}deg)`,
+                                                transformOrigin: 'center center'
+                                            }}
+                                        >
+                                            {renderRoomOpenings(ghostFloor.roomOpenings.get(room.id) || [], room)}
+                                        </div>
+                                    )
                                 ))}
                                 {ghostFloor.cylinders.map((cylinder) => (
                                     <div
@@ -1759,6 +1967,16 @@ export default function Canvas2D() {
                         <SurfaceElement key={surface.id} surface={surface} scale={scale} />
                     ))}
 
+                    {visibleRooms.filter((room) => room.points && room.points.length >= 3).map((room) => (
+                        <PolygonRoomElement
+                            key={room.id}
+                            room={room}
+                            scale={scale}
+                            distanceCandidates={distanceCandidates}
+                            setDistanceGuides={setDistanceGuides}
+                        />
+                    ))}
+
                     {drawingSurface && (
                         <g style={{ pointerEvents: 'none' }}>
                             {drawingSurface.points.length > 0 && (
@@ -1803,7 +2021,7 @@ export default function Canvas2D() {
                 </svg>
 
                 <div className="canvas-2d-content" style={{ pointerEvents: interactMode === 'select' ? 'auto' : 'none', width: CANVAS_WORLD_SIZE, height: CANVAS_WORLD_SIZE }}>
-                    {visibleRooms.map((room) => (
+                    {visibleRooms.filter((room) => !room.points || room.points.length < 3).map((room) => (
                         <RoomElement
                             key={room.id}
                             room={room}

@@ -47,6 +47,8 @@ export interface Room extends PositionedElement {
     width: number;
     height: number;
     rotation?: number;
+    points?: { x: number; y: number }[];
+    showWalls?: boolean;
     wallHeight?: number;
 }
 
@@ -89,6 +91,7 @@ export interface Door extends PositionedElement {
     wallId?: string;
     roomId?: string;
     edge?: RoomEdge;
+    edgeIndex?: number;
     ratio: number; // Position along the wall 0.0 to 1.0
     width: number;
     doorHeight: number;
@@ -207,7 +210,7 @@ export const useStore = create<AppState>()(persist((set) => ({
     activeFloorId: initialFloorId,
 
     rooms: [
-        { id: '1', floorId: initialFloorId, x: 2, y: 2, width: 4, height: 3, rotation: 0, name: 'Living Room', color: '#88ccff', wallHeight: 3 }
+        { id: '1', floorId: initialFloorId, x: 2, y: 2, width: 4, height: 3, rotation: 0, showWalls: true, name: 'Living Room', color: '#88ccff', wallHeight: 3 }
     ],
     furniture: [
         { id: 'f1', floorId: initialFloorId, type: 'sofa', x: 3, y: 3, rotation: 0 }
@@ -276,10 +279,21 @@ export const useStore = create<AppState>()(persist((set) => ({
     })),
 
     addRoom: (room) => set((state) => withHistory(state, {
-        rooms: [...state.rooms, { ...room, rotation: room.rotation ?? 0, floorId: room.floorId || state.activeFloorId, id: generateId() }]
+        rooms: [...state.rooms, {
+            ...room,
+            rotation: room.rotation ?? 0,
+            showWalls: room.showWalls ?? true,
+            floorId: room.floorId || state.activeFloorId,
+            id: generateId()
+        }]
     })),
     updateRoom: (id, data) => set((state) => withHistory(state, {
-        rooms: state.rooms.map(r => r.id === id ? { ...r, ...data, rotation: data.rotation ?? r.rotation ?? 0 } : r),
+        rooms: state.rooms.map(r => r.id === id ? {
+            ...r,
+            ...data,
+            rotation: data.rotation ?? r.rotation ?? 0,
+            showWalls: data.showWalls ?? r.showWalls ?? true
+        } : r),
         doors: data.floorId
             ? state.doors.map((door) => door.roomId === id ? { ...door, floorId: data.floorId as string } : door)
             : state.doors

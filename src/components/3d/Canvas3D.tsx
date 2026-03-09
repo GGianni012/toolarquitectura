@@ -283,12 +283,45 @@ function buildSceneBounds(
 }
 
 function Room3D({ room, floor, openings = [] }: { room: Room; floor: Floor; openings?: Rect2D[] }) {
+    const { setActiveFloor, setSelectedElement } = useStore();
     const rotationRadians = -THREE.MathUtils.degToRad(room.rotation || 0);
     const floorPatches = useMemo(
         () => subtractRectHolesFromRect({ x: room.x, y: room.y, width: room.width, height: room.height }, openings),
         [openings, room.height, room.width, room.x, room.y]
     );
     const canUseOpenings = Math.abs(room.rotation || 0) <= 0.01;
+    const polygonShape = useMemo(() => {
+        if (!room.points || room.points.length < 3) return null;
+
+        const shape = new THREE.Shape();
+        room.points.forEach((point, index) => {
+            if (index === 0) {
+                shape.moveTo(point.x, point.y);
+                return;
+            }
+            shape.lineTo(point.x, point.y);
+        });
+        shape.closePath();
+        return shape;
+    }, [room.points]);
+    const handleSelect = (event: any) => {
+        event.stopPropagation();
+        setActiveFloor(room.floorId);
+        setSelectedElement({ id: room.id, type: 'room' });
+    };
+
+    if (polygonShape) {
+        return (
+            <group onClick={handleSelect}>
+                <group position={[0, floor.elevation + 0.002, 0]} rotation={[Math.PI / 2, 0, 0]}>
+                    <mesh receiveShadow castShadow>
+                        <extrudeGeometry args={[polygonShape, { depth: FLOOR_THICKNESS, bevelEnabled: false }]} />
+                        <meshStandardMaterial color={room.color || '#dddddd'} roughness={0.85} side={THREE.DoubleSide} />
+                    </mesh>
+                </group>
+            </group>
+        );
+    }
 
     return (
         <>
@@ -297,6 +330,7 @@ function Room3D({ room, floor, openings = [] }: { room: Room; floor: Floor; open
                     key={`${room.id}-patch-${index}`}
                     position={[patch.x + patch.width / 2, floor.elevation, patch.y + patch.height / 2]}
                     rotation={[0, canUseOpenings ? 0 : rotationRadians, 0]}
+                    onClick={handleSelect}
                 >
                     <Box args={[patch.width, FLOOR_THICKNESS, patch.height]} position={[0, -FLOOR_THICKNESS / 2, 0]} castShadow receiveShadow>
                         <meshStandardMaterial color={room.color || '#dddddd'} roughness={0.85} />
@@ -316,19 +350,31 @@ function RoomWall3D({
     floor: Floor;
     doorOpenings: WallOpening[];
 }) {
+    const { setActiveFloor, setSelectedElement } = useStore();
     if (!segment.visible) return null;
 
     return (
-        <WallWithOpenings
-            start={segment.start}
-            angle={segment.angle}
-            baseElevation={floor.elevation}
-            length={segment.length}
-            height={segment.height}
-            thickness={WALL_THICKNESS}
-            color={ROOM_WALL_COLOR}
-            openings={doorOpenings}
-        />
+        <group
+            onClick={(event) => {
+                event.stopPropagation();
+                setActiveFloor(segment.floorId);
+                const roomId = segment.contributors[0]?.roomId;
+                if (roomId) {
+                    setSelectedElement({ id: roomId, type: 'room' });
+                }
+            }}
+        >
+            <WallWithOpenings
+                start={segment.start}
+                angle={segment.angle}
+                baseElevation={floor.elevation}
+                length={segment.length}
+                height={segment.height}
+                thickness={WALL_THICKNESS}
+                color={ROOM_WALL_COLOR}
+                openings={doorOpenings}
+            />
+        </group>
     );
 }
 
@@ -341,28 +387,46 @@ function Wall3D({
     floor: Floor;
     doorOpenings: WallOpening[];
 }) {
+    const { setActiveFloor, setSelectedElement } = useStore();
     const segment = getWallSegment(wall);
     const height = wall.wallHeight || floor.height || DEFAULT_LEVEL_HEIGHT;
 
     return (
-        <WallWithOpenings
-            start={segment.start}
-            angle={segment.angle}
-            baseElevation={floor.elevation}
-            length={segment.length}
-            height={height}
-            thickness={wall.thickness || WALL_THICKNESS}
-            color={wall.color || '#f0f0f0'}
-            openings={doorOpenings}
-        />
+        <group
+            onClick={(event) => {
+                event.stopPropagation();
+                setActiveFloor(wall.floorId);
+                setSelectedElement({ id: wall.id, type: 'wall' });
+            }}
+        >
+            <WallWithOpenings
+                start={segment.start}
+                angle={segment.angle}
+                baseElevation={floor.elevation}
+                length={segment.length}
+                height={height}
+                thickness={wall.thickness || WALL_THICKNESS}
+                color={wall.color || '#f0f0f0'}
+                openings={doorOpenings}
+            />
+        </group>
     );
 }
 
 function Door3D({ door, placement, floor, thickness }: { door: Door; placement: FittedDoorPlacement; floor: Floor; thickness?: number }) {
+    const { setActiveFloor, setSelectedElement } = useStore();
     const doorLeafThickness = Math.min(thickness || WALL_THICKNESS, 0.08);
 
     return (
-        <group position={[placement.center.x, floor.elevation, placement.center.y]} rotation={[0, -placement.angle, 0]}>
+        <group
+            position={[placement.center.x, floor.elevation, placement.center.y]}
+            rotation={[0, -placement.angle, 0]}
+            onClick={(event) => {
+                event.stopPropagation();
+                setActiveFloor(door.floorId);
+                setSelectedElement({ id: door.id, type: 'door' });
+            }}
+        >
             <Box args={[placement.width, placement.doorHeight, doorLeafThickness]} position={[0, placement.doorHeight / 2, 0]} castShadow>
                 <meshStandardMaterial color={door.color || '#c78d54'} metalness={0.05} roughness={0.45} />
             </Box>
@@ -371,9 +435,17 @@ function Door3D({ door, placement, floor, thickness }: { door: Door; placement: 
 }
 
 function Cylinder3D({ cylinder, floor }: { cylinder: Cylinder; floor: Floor }) {
+    const { setActiveFloor, setSelectedElement } = useStore();
     const height = cylinder.wallHeight || floor.height || DEFAULT_LEVEL_HEIGHT;
     return (
-        <group position={[cylinder.x, floor.elevation + height / 2, cylinder.y]}>
+        <group
+            position={[cylinder.x, floor.elevation + height / 2, cylinder.y]}
+            onClick={(event) => {
+                event.stopPropagation();
+                setActiveFloor(cylinder.floorId);
+                setSelectedElement({ id: cylinder.id, type: 'cylinder' });
+            }}
+        >
             <CylinderShape args={[cylinder.radius, cylinder.radius, height, 32]} castShadow receiveShadow>
                 <meshStandardMaterial color={cylinder.color || '#f0f0f0'} />
             </CylinderShape>
@@ -382,6 +454,7 @@ function Cylinder3D({ cylinder, floor }: { cylinder: Cylinder; floor: Floor }) {
 }
 
 function Furniture3D({ item, floor }: { item: Furniture; floor: Floor }) {
+    const { setActiveFloor, setSelectedElement } = useStore();
     let color = '#ccc';
     let size: [number, number, number] = [0.8, 0.5, 0.8];
 
@@ -402,7 +475,14 @@ function Furniture3D({ item, floor }: { item: Furniture; floor: Floor }) {
     const altitude = item.altitude || 0;
 
     return (
-        <group position={[item.x + width / 2, floor.elevation + height / 2 + altitude, item.y + depth / 2]}>
+        <group
+            position={[item.x + width / 2, floor.elevation + height / 2 + altitude, item.y + depth / 2]}
+            onClick={(event) => {
+                event.stopPropagation();
+                setActiveFloor(item.floorId);
+                setSelectedElement({ id: item.id, type: 'furniture' });
+            }}
+        >
             <Box args={[width, height, depth]} castShadow receiveShadow>
                 <meshStandardMaterial color={item.color || color} roughness={0.3} />
             </Box>
@@ -411,6 +491,7 @@ function Furniture3D({ item, floor }: { item: Furniture; floor: Floor }) {
 }
 
 function Surface3D({ surface, floor }: { surface: Surface; floor: Floor }) {
+    const { setActiveFloor, setSelectedElement } = useStore();
     const depth = surface.depth || 0.1;
     const altitude = surface.altitude || 0;
 
@@ -432,7 +513,15 @@ function Surface3D({ surface, floor }: { surface: Surface; floor: Floor }) {
     if (!shape) return null;
 
     return (
-        <group position={[0, floor.elevation + altitude + 0.01, 0]} rotation={[Math.PI / 2, 0, 0]}>
+        <group
+            position={[0, floor.elevation + altitude + 0.01, 0]}
+            rotation={[Math.PI / 2, 0, 0]}
+            onClick={(event) => {
+                event.stopPropagation();
+                setActiveFloor(surface.floorId);
+                setSelectedElement({ id: surface.id, type: 'surface' });
+            }}
+        >
             <mesh receiveShadow castShadow>
                 <extrudeGeometry args={[shape, { depth, bevelEnabled: false }]} />
                 <meshStandardMaterial color={surface.color || '#cccccc'} side={THREE.DoubleSide} />
@@ -442,6 +531,7 @@ function Surface3D({ surface, floor }: { surface: Surface; floor: Floor }) {
 }
 
 function Stair3D({ stair, floor, targetFloor }: { stair: Stair; floor: Floor; targetFloor: Floor }) {
+    const { setActiveFloor, setSelectedElement } = useStore();
     const elevationDelta = targetFloor.elevation - floor.elevation;
 
     if (Math.abs(elevationDelta) < 0.1) {
@@ -459,7 +549,14 @@ function Stair3D({ stair, floor, targetFloor }: { stair: Stair; floor: Floor; ta
     const baseZ = stair.y + stair.height / 2;
 
     return (
-        <group position={[baseX, floor.elevation, baseZ]}>
+        <group
+            position={[baseX, floor.elevation, baseZ]}
+            onClick={(event) => {
+                event.stopPropagation();
+                setActiveFloor(stair.floorId);
+                setSelectedElement({ id: stair.id, type: 'stair' });
+            }}
+        >
             {Array.from({ length: stepCount }).map((_, index) => {
                 const offsetFromStart = runLength / 2 - treadDepth * (index + 0.5);
                 const signedOffset = stair.direction === 'north' || stair.direction === 'west'
@@ -601,7 +698,7 @@ function SceneNavigation({
 }
 
 export default function Canvas3D() {
-    const { floors, rooms, furniture, walls, cylinders, doors, surfaces, stairs, activeFloorId, setActiveFloor, setVisibleFloors } = useStore();
+    const { floors, rooms, furniture, walls, cylinders, doors, surfaces, stairs, activeFloorId, setActiveFloor, setVisibleFloors, setSelectedElement } = useStore();
     const [fitRequestToken, setFitRequestToken] = useState(0);
     const controlsRef = useRef<OrbitControlsImpl>(null);
 
@@ -701,7 +798,12 @@ export default function Canvas3D() {
                 if (segment.floorId !== placement.floorId) return;
 
                 const matchesContributor = segment.contributors.some(
-                    (contributor) => contributor.roomId === placement.hostId && contributor.edge === placement.edge
+                    (contributor) => contributor.roomId === placement.hostId
+                        && (
+                            placement.edgeIndex !== undefined
+                                ? contributor.edgeIndex === placement.edgeIndex
+                                : contributor.edge === placement.edge
+                        )
                 );
                 if (!matchesContributor) return;
 
@@ -734,7 +836,12 @@ export default function Canvas3D() {
                 if (!segment.visible || segment.floorId !== placement.floorId) return false;
 
                 const matchesContributor = segment.contributors.some(
-                    (contributor) => contributor.roomId === placement.hostId && contributor.edge === placement.edge
+                    (contributor) => contributor.roomId === placement.hostId
+                        && (
+                            placement.edgeIndex !== undefined
+                                ? contributor.edgeIndex === placement.edgeIndex
+                                : contributor.edge === placement.edge
+                        )
                 );
                 if (!matchesContributor) return false;
 
@@ -923,6 +1030,7 @@ export default function Canvas3D() {
                     rotation={[-Math.PI / 2, 0, 0]}
                     position={[sceneCenter.x, lowestElevation - 0.03, sceneCenter.z]}
                     receiveShadow
+                    onClick={() => setSelectedElement(null)}
                 >
                     <meshStandardMaterial color="#1d2a40" roughness={0.98} metalness={0.02} />
                 </Plane>

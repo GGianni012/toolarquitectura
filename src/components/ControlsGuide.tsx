@@ -72,6 +72,8 @@ export default function ControlsGuide() {
                 <div className="controls-guide-row"><kbd>1</kbd><span>Switch to 2D planner</span></div>
                 <div className="controls-guide-row"><kbd>2</kbd><span>Switch to 3D viewer</span></div>
                 <div className="controls-guide-row"><kbd>Esc</kbd><span>{selectedElement ? 'Clear current selection' : 'Close active selection'}</span></div>
+                <div className="controls-guide-row"><kbd>Ctrl/Cmd</kbd> + <kbd>C</kbd><span>Copy selected room</span></div>
+                <div className="controls-guide-row"><kbd>Ctrl/Cmd</kbd> + <kbd>V</kbd><span>Paste copied room</span></div>
                 <div className="controls-guide-row"><kbd>?</kbd><span>Show or hide this panel</span></div>
             </div>
 
@@ -81,6 +83,7 @@ export default function ControlsGuide() {
                     <div className="controls-guide-row"><kbd>Space</kbd><span>Hold and drag to pan</span></div>
                     <div className="controls-guide-row"><kbd>Alt</kbd><span>Hold and drag to pan</span></div>
                     <div className="controls-guide-row"><kbd>Ctrl</kbd> + <kbd>Wheel</kbd><span>Zoom in or out</span></div>
+                    <div className="controls-guide-row"><kbd>Draw Room</kbd><span>Create modular rooms point by point</span></div>
                     <div className="controls-guide-note">The background grid is only a visual guide. Snapping still pulls edges and points together.</div>
                 </div>
             ) : (
@@ -92,6 +95,7 @@ export default function ControlsGuide() {
                     <div className="controls-guide-row"><kbd>Mouse drag</kbd><span>Orbit around the building</span></div>
                     <div className="controls-guide-row"><kbd>Right drag</kbd><span>Pan the camera</span></div>
                     <div className="controls-guide-row"><kbd>Wheel</kbd><span>Zoom the camera</span></div>
+                    <div className="controls-guide-row"><kbd>Click</kbd><span>Select rooms and objects directly in 3D</span></div>
                     <div className="controls-guide-row"><kbd>F</kbd><span>Fit the full building in view</span></div>
                 </div>
             )}

@@ -14,6 +14,7 @@ export interface DoorHostSegment {
     hostId: string;
     floorId: string;
     edge?: RoomEdge;
+    edgeIndex?: number;
     start: Point2D;
     end: Point2D;
     length: number;
@@ -40,6 +41,7 @@ export interface DoorHostCandidate extends DoorHostSegment {
 interface RoomEdgeContribution {
     roomId: string;
     edge: RoomEdge;
+    edgeIndex?: number;
     height: number;
 }
 
@@ -84,7 +86,15 @@ function getSegmentOrientation(start: Point2D, end: Point2D): SegmentOrientation
     return 'angled';
 }
 
-function buildSegment(hostKind: DoorHostKind, hostId: string, floorId: string, start: Point2D, end: Point2D, edge?: RoomEdge): DoorHostSegment {
+function buildSegment(
+    hostKind: DoorHostKind,
+    hostId: string,
+    floorId: string,
+    start: Point2D,
+    end: Point2D,
+    edge?: RoomEdge,
+    edgeIndex?: number
+): DoorHostSegment {
     const dx = end.x - start.x;
     const dy = end.y - start.y;
 
@@ -93,6 +103,7 @@ function buildSegment(hostKind: DoorHostKind, hostId: string, floorId: string, s
         hostId,
         floorId,
         edge,
+        edgeIndex,
         start,
         end,
         length: Math.hypot(dx, dy),
@@ -117,7 +128,11 @@ function rotatePoint(point: Point2D, center: Point2D, radians: number) {
     };
 }
 
-export function getRoomCorners(room: Room) {
+export function getRoomPolygon(room: Room) {
+    if (room.points && room.points.length >= 3) {
+        return room.points.map((point) => ({ ...point }));
+    }
+
     const center = { x: room.x + room.width / 2, y: room.y + room.height / 2 };
     const rotation = ((room.rotation || 0) * Math.PI) / 180;
     const rawCorners: Point2D[] = [
@@ -130,10 +145,14 @@ export function getRoomCorners(room: Room) {
     return rawCorners.map((corner) => rotatePoint(corner, center, rotation));
 }
 
+export function getRoomCorners(room: Room) {
+    return getRoomPolygon(room);
+}
+
 export function getRoomBounds(room: Room): Rect2D {
-    const corners = getRoomCorners(room);
-    const xs = corners.map((corner) => corner.x);
-    const ys = corners.map((corner) => corner.y);
+    const polygon = getRoomPolygon(room);
+    const xs = polygon.map((corner) => corner.x);
+    const ys = polygon.map((corner) => corner.y);
 
     return {
         x: Math.min(...xs),
@@ -145,12 +164,23 @@ export function getRoomBounds(room: Room): Rect2D {
 
 export function getDoorHostKind(door: Door): DoorHostKind | null {
     if (door.hostKind) return door.hostKind;
-    if (door.roomId && door.edge) return 'room';
+    if (door.roomId && (door.edge || door.edgeIndex !== undefined)) return 'room';
     if (door.wallId) return 'wall';
     return null;
 }
 
-export function getRoomEdgeSegment(room: Room, edge: RoomEdge): DoorHostSegment {
+function getPolygonEdgeSegment(room: Room, edgeIndex: number): DoorHostSegment {
+    const polygon = getRoomPolygon(room);
+    const start = polygon[edgeIndex];
+    const end = polygon[(edgeIndex + 1) % polygon.length];
+    return buildSegment('room', room.id, room.floorId, start, end, undefined, edgeIndex);
+}
+
+export function getRoomEdgeSegment(room: Room, edge: RoomEdge, edgeIndex?: number): DoorHostSegment {
+    if (room.points && room.points.length >= 3) {
+        return getPolygonEdgeSegment(room, edgeIndex ?? 0);
+    }
+
     const corners = getRoomCorners(room);
 
     switch (edge) {
@@ -172,9 +202,9 @@ export function getWallSegment(wall: Wall): DoorHostSegment {
 export function resolveDoorHostSegment(door: Door, rooms: Room[], walls: Wall[]): DoorHostSegment | null {
     const hostKind = getDoorHostKind(door);
 
-    if (hostKind === 'room' && door.roomId && door.edge) {
+    if (hostKind === 'room' && door.roomId && (door.edge || door.edgeIndex !== undefined)) {
         const room = rooms.find((item) => item.id === door.roomId);
-        return room ? getRoomEdgeSegment(room, door.edge) : null;
+        return room ? getRoomEdgeSegment(room, door.edge || 'north', door.edgeIndex) : null;
     }
 
     if (door.wallId) {
@@ -404,6 +434,22 @@ export function findClosestDoorHost(
     rooms
         .filter((room) => room.floorId === floorId)
         .forEach((room) => {
+            if (room.points && room.points.length >= 3) {
+                room.points.forEach((_, edgeIndex) => {
+                    const host = getRoomEdgeSegment(room, 'north', edgeIndex);
+                    const projection = projectPointToSegment(point, host.start, host.end);
+                    if (!projection || projection.distance > maxDistance) return;
+
+                    candidates.push({
+                        ...host,
+                        ratio: projection.ratio,
+                        distance: projection.distance,
+                        projectionDistance: projection.projectionDistance
+                    });
+                });
+                return;
+            }
+
             ROOM_EDGES.forEach((edge) => {
                 const host = getRoomEdgeSegment(room, edge);
                 const projection = projectPointToSegment(point, host.start, host.end);
@@ -443,6 +489,7 @@ export function buildRoomWallSegments(rooms: Room[], floors: Floor[]) {
         spanEnd: number;
         roomId: string;
         edge: RoomEdge;
+        edgeIndex?: number;
         height: number;
     }>>();
     const angledSegments: RoomWallSegment[] = [];
@@ -450,6 +497,33 @@ export function buildRoomWallSegments(rooms: Room[], floors: Floor[]) {
     rooms.forEach((room) => {
         const floor = floorMap.get(room.floorId);
         const height = room.wallHeight || floor?.height || DEFAULT_ROOM_WALL_HEIGHT;
+        if (room.showWalls === false) {
+            return;
+        }
+
+        if (room.points && room.points.length >= 3) {
+            room.points.forEach((_, edgeIndex) => {
+                const segment = getRoomEdgeSegment(room, 'north', edgeIndex);
+                angledSegments.push({
+                    id: `${room.id}:poly:${edgeIndex}`,
+                    floorId: segment.floorId,
+                    start: segment.start,
+                    end: segment.end,
+                    length: segment.length,
+                    angle: segment.angle,
+                    orientation: segment.orientation,
+                    height,
+                    contributors: [{
+                        roomId: room.id,
+                        edge: 'north',
+                        edgeIndex,
+                        height
+                    }],
+                    visible: true
+                });
+            });
+            return;
+        }
 
         ROOM_EDGES.forEach((edge) => {
             const segment = getRoomEdgeSegment(room, edge);
@@ -470,6 +544,7 @@ export function buildRoomWallSegments(rooms: Room[], floors: Floor[]) {
                     contributors: [{
                         roomId: room.id,
                         edge,
+                        edgeIndex: segment.edgeIndex,
                         height
                     }],
                     visible
@@ -544,6 +619,7 @@ export function buildRoomWallSegments(rooms: Room[], floors: Floor[]) {
                 contributors: contributors.map((contributor) => ({
                     roomId: contributor.roomId,
                     edge: contributor.edge,
+                    edgeIndex: contributor.edgeIndex,
                     height: contributor.height
                 })),
                 visible
