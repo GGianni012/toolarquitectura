@@ -122,6 +122,32 @@
     border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.header-undo-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(8, 12, 24, 0.72);
+    color: rgba(255, 255, 255, 0.88);
+    border-radius: 999px;
+    padding: 10px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+}
+
+.header-undo-btn.disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
 .mode-btn {
     background: transparent;
     border: none;

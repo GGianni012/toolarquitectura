@@ -2,6 +2,62 @@ import { useStore } from '../store/useStore';
 import { Lock, Unlock, X } from 'lucide-react';
 import './PropertiesPanel.css';
 
+const PLAN_UNIT_IN_METERS = 0.5;
+
+function formatMeters(value: number) {
+    const decimals = Math.abs(value) >= 10 ? 1 : 2;
+    return `${value.toFixed(decimals).replace(/\.?0+$/, '')}m`;
+}
+
+function formatPlanMeasure(value: number) {
+    return formatMeters(value * PLAN_UNIT_IN_METERS);
+}
+
+function getPolygonMetrics(points: Array<{ x: number; y: number }>) {
+    if (!points || points.length < 2) {
+        return { perimeter: 0, area: 0 };
+    }
+
+    let perimeter = 0;
+    let doubleArea = 0;
+
+    points.forEach((point, index) => {
+        const next = points[(index + 1) % points.length];
+        perimeter += Math.hypot(next.x - point.x, next.y - point.y);
+        doubleArea += point.x * next.y - next.x * point.y;
+    });
+
+    return {
+        perimeter: perimeter * PLAN_UNIT_IN_METERS,
+        area: Math.abs(doubleArea / 2) * PLAN_UNIT_IN_METERS * PLAN_UNIT_IN_METERS
+    };
+}
+
+function FloorChoiceGroup({
+    options,
+    value,
+    onChange
+}: {
+    options: Array<{ id: string; name: string }>;
+    value: string;
+    onChange: (nextId: string) => void;
+}) {
+    return (
+        <div className="floor-choice-group">
+            {options.map((option) => (
+                <button
+                    key={option.id}
+                    type="button"
+                    className={`floor-choice-btn ${option.id === value ? 'active' : ''}`}
+                    onClick={() => onChange(option.id)}
+                >
+                    {option.name}
+                </button>
+            ))}
+        </div>
+    );
+}
+
 export default function PropertiesPanel() {
     const {
         selectedElement,
@@ -18,6 +74,13 @@ export default function PropertiesPanel() {
 
     if (!selectedElement) {
         if (!activeFloor) return null;
+        const sortedFloors = [...floors].sort((a, b) => a.elevation - b.elevation);
+        const activeFloorIndex = sortedFloors.findIndex((floor) => floor.id === activeFloor.id);
+        const previousFloor = sortedFloors[activeFloorIndex - 1];
+        const topElevation = activeFloor.elevation + activeFloor.height;
+        const floorGap = previousFloor
+            ? activeFloor.elevation - (previousFloor.elevation + previousFloor.height)
+            : activeFloor.elevation;
 
         const updateReference = (data: Partial<NonNullable<typeof activeFloor.reference>>) => {
             if (!activeFloor.reference) return;
@@ -89,6 +152,24 @@ export default function PropertiesPanel() {
                         >
                             {activeFloor.visible ? 'Visible' : 'Hidden'}
                         </button>
+                    </div>
+
+                    <div className="property-row stacked">
+                        <label>Level Metrics</label>
+                        <div className="metrics-grid">
+                            <div className="metric-card">
+                                <span>Base</span>
+                                <strong>{formatMeters(activeFloor.elevation)}</strong>
+                            </div>
+                            <div className="metric-card">
+                                <span>Top</span>
+                                <strong>{formatMeters(topElevation)}</strong>
+                            </div>
+                            <div className="metric-card">
+                                <span>Gap Below</span>
+                                <strong>{formatMeters(floorGap)}</strong>
+                            </div>
+                        </div>
                     </div>
 
                     {activeFloor.reference && (
@@ -198,6 +279,59 @@ export default function PropertiesPanel() {
                 return wall ? wall.name || 'Custom wall' : 'Attached wall';
             })())
         : null;
+    const measurementRows = (() => {
+        switch (type) {
+            case 'room':
+                return [
+                    { label: 'Origin', value: `${formatPlanMeasure(element.x)}, ${formatPlanMeasure(element.y)}` },
+                    { label: 'Width', value: formatPlanMeasure(element.width) },
+                    { label: 'Depth', value: formatPlanMeasure(element.height) },
+                    { label: 'Area', value: `${(element.width * element.height * PLAN_UNIT_IN_METERS * PLAN_UNIT_IN_METERS).toFixed(2).replace(/\.?0+$/, '')}m²` }
+                ];
+            case 'wall':
+                return [
+                    { label: 'Start', value: `${formatPlanMeasure(element.startX)}, ${formatPlanMeasure(element.startY)}` },
+                    { label: 'End', value: `${formatPlanMeasure(element.endX)}, ${formatPlanMeasure(element.endY)}` },
+                    { label: 'Length', value: formatPlanMeasure(Math.hypot(element.endX - element.startX, element.endY - element.startY)) },
+                    { label: 'Thickness', value: formatMeters(element.thickness || 0.18) }
+                ];
+            case 'door':
+                return [
+                    { label: 'Width', value: formatMeters(element.width) },
+                    { label: 'Height', value: formatMeters(element.doorHeight || 2.1) },
+                    { label: 'Host', value: doorHostLabel || 'Wall' }
+                ];
+            case 'furniture':
+                return [
+                    { label: 'Origin', value: `${formatPlanMeasure(element.x)}, ${formatPlanMeasure(element.y)}` },
+                    { label: 'Width', value: formatMeters(element.width !== undefined ? element.width : 1) },
+                    { label: 'Depth', value: formatMeters(element.depth !== undefined ? element.depth : 1) },
+                    { label: 'Height', value: formatMeters(element.height !== undefined ? element.height : 0.5) }
+                ];
+            case 'cylinder':
+                return [
+                    { label: 'Center', value: `${formatPlanMeasure(element.x)}, ${formatPlanMeasure(element.y)}` },
+                    { label: 'Radius', value: formatPlanMeasure(element.radius) },
+                    { label: 'Diameter', value: formatPlanMeasure(element.radius * 2) }
+                ];
+            case 'surface': {
+                const { perimeter, area } = getPolygonMetrics(element.points || []);
+                return [
+                    { label: 'Points', value: `${element.points?.length || 0}` },
+                    { label: 'Perimeter', value: formatMeters(perimeter) },
+                    { label: 'Area', value: `${area.toFixed(2).replace(/\.?0+$/, '')}m²` }
+                ];
+            }
+            case 'stair':
+                return [
+                    { label: 'Origin', value: `${formatPlanMeasure(element.x)}, ${formatPlanMeasure(element.y)}` },
+                    { label: 'Width', value: formatPlanMeasure(element.width) },
+                    { label: 'Run', value: formatPlanMeasure(element.height) }
+                ];
+            default:
+                return [];
+        }
+    })();
 
     return (
         <div className="properties-panel">
@@ -222,16 +356,11 @@ export default function PropertiesPanel() {
                 {canMoveBetweenFloors && (
                     <div className="property-row stacked">
                         <label>Level</label>
-                        <select
+                        <FloorChoiceGroup
+                            options={floors.map((floor) => ({ id: floor.id, name: floor.name }))}
                             value={element.floorId}
-                            onChange={(e) => handleChange('floorId', e.target.value)}
-                        >
-                            {floors.map((floor) => (
-                                <option key={floor.id} value={floor.id}>
-                                    {floor.name}
-                                </option>
-                            ))}
-                        </select>
+                            onChange={(nextId) => handleChange('floorId', nextId)}
+                        />
                     </div>
                 )}
 
@@ -254,6 +383,20 @@ export default function PropertiesPanel() {
                         {element.locked ? 'Locked' : 'Unlocked'}
                     </button>
                 </div>
+
+                {measurementRows.length > 0 && (
+                    <div className="property-row stacked">
+                        <label>Measurements</label>
+                        <div className="metrics-grid">
+                            {measurementRows.map((row) => (
+                                <div key={row.label} className="metric-card">
+                                    <span>{row.label}</span>
+                                    <strong>{row.value}</strong>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 {/* 3D Wall Height / Extrusion */}
                 {(type === 'room' || type === 'cylinder' || type === 'wall') && (
@@ -398,16 +541,11 @@ export default function PropertiesPanel() {
                     <>
                         <div className="property-row stacked">
                             <label>Target Level</label>
-                            <select
+                            <FloorChoiceGroup
+                                options={floors.filter((floor) => floor.id !== element.floorId).map((floor) => ({ id: floor.id, name: floor.name }))}
                                 value={element.targetFloorId}
-                                onChange={(e) => handleChange('targetFloorId', e.target.value)}
-                            >
-                                {floors.filter((floor) => floor.id !== element.floorId).map((floor) => (
-                                    <option key={floor.id} value={floor.id}>
-                                        {floor.name}
-                                    </option>
-                                ))}
-                            </select>
+                                onChange={(nextId) => handleChange('targetFloorId', nextId)}
+                            />
                         </div>
                         <div className="property-row stacked">
                             <label>Direction</label>

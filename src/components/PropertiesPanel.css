@@ -169,3 +169,61 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+}
+
+.metric-card {
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.05);
+    padding: 0.55rem 0.65rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.28rem;
+}
+
+.metric-card span {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.metric-card strong {
+    font-size: 0.86rem;
+    color: rgba(255, 255, 255, 0.9);
+    line-height: 1.3;
+}
+
+.floor-choice-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+
+.floor-choice-btn {
+    width: 100%;
+    text-align: left;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.82);
+    padding: 0.7rem 0.8rem;
+    cursor: pointer;
+    transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+}
+
+.floor-choice-btn:hover {
+    border-color: rgba(79, 172, 254, 0.5);
+    transform: translateY(-1px);
+}
+
+.floor-choice-btn.active {
+    border-color: rgba(79, 172, 254, 0.85);
+    background: rgba(79, 172, 254, 0.22);
+    color: white;
+}

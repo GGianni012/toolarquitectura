@@ -104,6 +104,18 @@ export interface Stair extends PositionedElement {
 
 export type InteractMode = 'select' | 'draw_wall' | 'draw_surface' | 'place_door' | 'place_cylinder';
 
+type HistorySnapshot = Pick<AppState,
+    'floors'
+    | 'activeFloorId'
+    | 'rooms'
+    | 'furniture'
+    | 'walls'
+    | 'doors'
+    | 'cylinders'
+    | 'surfaces'
+    | 'stairs'
+>;
+
 interface AppState {
     mode: Mode;
     interactMode: InteractMode;
@@ -118,12 +130,15 @@ interface AppState {
     cylinders: Cylinder[];
     surfaces: Surface[];
     stairs: Stair[];
+    history: HistorySnapshot[];
+    canUndo: boolean;
 
     setMode: (mode: Mode) => void;
     setInteractMode: (mode: InteractMode) => void;
     toggleMode: () => void;
     setSelectedElement: (element: { id: string, type: ElementType } | null) => void;
     setActiveFloor: (floorId: string) => void;
+    undo: () => void;
 
     addFloor: (floor?: Partial<Omit<Floor, 'id'>>) => void;
     updateFloor: (id: string, data: Partial<Floor>) => void;
@@ -154,9 +169,33 @@ interface AppState {
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 const initialFloorId = 'floor-1';
+const MAX_HISTORY_STEPS = 120;
 const initialFloors: Floor[] = [
     { id: initialFloorId, name: 'Ground Floor', elevation: 0, height: 3.2, visible: true, openSide: 'south', reference: null }
 ];
+
+function createHistorySnapshot(state: Pick<AppState, 'floors' | 'activeFloorId' | 'rooms' | 'furniture' | 'walls' | 'doors' | 'cylinders' | 'surfaces' | 'stairs'>): HistorySnapshot {
+    return {
+        floors: structuredClone(state.floors),
+        activeFloorId: state.activeFloorId,
+        rooms: structuredClone(state.rooms),
+        furniture: structuredClone(state.furniture),
+        walls: structuredClone(state.walls),
+        doors: structuredClone(state.doors),
+        cylinders: structuredClone(state.cylinders),
+        surfaces: structuredClone(state.surfaces),
+        stairs: structuredClone(state.stairs)
+    };
+}
+
+function withHistory(state: AppState, partial: Partial<AppState>) {
+    const history = [...state.history, createHistorySnapshot(state)].slice(-MAX_HISTORY_STEPS);
+    return {
+        ...partial,
+        history,
+        canUndo: history.length > 0
+    };
+}
 
 export const useStore = create<AppState>()(persist((set) => ({
     mode: '2D',
@@ -176,12 +215,26 @@ export const useStore = create<AppState>()(persist((set) => ({
     cylinders: [],
     surfaces: [],
     stairs: [],
+    history: [],
+    canUndo: false,
 
     setMode: (mode) => set({ mode }),
     setInteractMode: (mode) => set({ interactMode: mode }),
     toggleMode: () => set((state) => ({ mode: state.mode === '2D' ? '3D' : '2D' })),
     setSelectedElement: (element) => set({ selectedElement: element }),
     setActiveFloor: (activeFloorId) => set({ activeFloorId, selectedElement: null }),
+    undo: () => set((state) => {
+        const previous = state.history[state.history.length - 1];
+        if (!previous) return state;
+
+        const history = state.history.slice(0, -1);
+        return {
+            ...previous,
+            selectedElement: null,
+            history,
+            canUndo: history.length > 0
+        };
+    }),
 
     addFloor: (floor) => set((state) => {
         const highestFloor = state.floors.reduce((currentHighest, currentFloor) => {
@@ -201,37 +254,37 @@ export const useStore = create<AppState>()(persist((set) => ({
             reference: floor?.reference ?? null
         };
 
-        return {
+        return withHistory(state, {
             floors: [...state.floors, newFloor],
             activeFloorId: newFloor.id,
             selectedElement: null
-        };
+        });
     }),
-    updateFloor: (id, data) => set((state) => ({
+    updateFloor: (id, data) => set((state) => withHistory(state, {
         floors: state.floors.map((floor) => floor.id === id ? { ...floor, ...data } : floor)
     })),
 
-    addRoom: (room) => set((state) => ({
+    addRoom: (room) => set((state) => withHistory(state, {
         rooms: [...state.rooms, { ...room, floorId: room.floorId || state.activeFloorId, id: generateId() }]
     })),
-    updateRoom: (id, data) => set((state) => ({
+    updateRoom: (id, data) => set((state) => withHistory(state, {
         rooms: state.rooms.map(r => r.id === id ? { ...r, ...data } : r),
         doors: data.floorId
             ? state.doors.map((door) => door.roomId === id ? { ...door, floorId: data.floorId as string } : door)
             : state.doors
     })),
 
-    addFurniture: (item) => set((state) => ({
+    addFurniture: (item) => set((state) => withHistory(state, {
         furniture: [...state.furniture, { ...item, floorId: item.floorId || state.activeFloorId, id: generateId() }]
     })),
-    updateFurniture: (id, data) => set((state) => ({
+    updateFurniture: (id, data) => set((state) => withHistory(state, {
         furniture: state.furniture.map(f => f.id === id ? { ...f, ...data } : f)
     })),
 
-    addWall: (wall) => set((state) => ({
+    addWall: (wall) => set((state) => withHistory(state, {
         walls: [...state.walls, { ...wall, floorId: wall.floorId || state.activeFloorId, id: generateId() }]
     })),
-    updateWall: (id, data) => set((state) => ({
+    updateWall: (id, data) => set((state) => withHistory(state, {
         walls: state.walls.map(w => w.id === id ? { ...w, ...data } : w),
         doors: data.floorId
             ? state.doors.map((door) => door.wallId === id ? { ...door, floorId: data.floorId as string } : door)
@@ -242,7 +295,7 @@ export const useStore = create<AppState>()(persist((set) => ({
         const parentWall = door.wallId ? state.walls.find((wall) => wall.id === door.wallId) : null;
         const parentRoom = door.roomId ? state.rooms.find((room) => room.id === door.roomId) : null;
         const hostKind: DoorHostKind = door.hostKind || (door.roomId ? 'room' : 'wall');
-        return {
+        return withHistory(state, {
             doors: [
                 ...state.doors,
                 {
@@ -252,30 +305,30 @@ export const useStore = create<AppState>()(persist((set) => ({
                     id: generateId()
                 }
             ]
-        };
+        });
     }),
-    updateDoor: (id, data) => set((state) => ({
+    updateDoor: (id, data) => set((state) => withHistory(state, {
         doors: state.doors.map(d => d.id === id ? { ...d, ...data } : d)
     })),
 
-    addCylinder: (cylinder) => set((state) => ({
+    addCylinder: (cylinder) => set((state) => withHistory(state, {
         cylinders: [...state.cylinders, { ...cylinder, floorId: cylinder.floorId || state.activeFloorId, id: generateId() }]
     })),
-    updateCylinder: (id, data) => set((state) => ({
+    updateCylinder: (id, data) => set((state) => withHistory(state, {
         cylinders: state.cylinders.map(c => c.id === id ? { ...c, ...data } : c)
     })),
 
-    addSurface: (surface) => set((state) => ({
+    addSurface: (surface) => set((state) => withHistory(state, {
         surfaces: [...state.surfaces, { ...surface, floorId: surface.floorId || state.activeFloorId, id: generateId() }]
     })),
-    updateSurface: (id, data) => set((state) => ({
+    updateSurface: (id, data) => set((state) => withHistory(state, {
         surfaces: state.surfaces.map(s => s.id === id ? { ...s, ...data } : s)
     })),
 
-    addStair: (stair) => set((state) => ({
+    addStair: (stair) => set((state) => withHistory(state, {
         stairs: [...state.stairs, { ...stair, floorId: stair.floorId || state.activeFloorId, id: generateId() }]
     })),
-    updateStair: (id, data) => set((state) => ({
+    updateStair: (id, data) => set((state) => withHistory(state, {
         stairs: state.stairs.map(s => s.id === id ? { ...s, ...data } : s)
     })),
 
@@ -299,7 +352,7 @@ export const useStore = create<AppState>()(persist((set) => ({
             case 'surface': nextState.surfaces = state.surfaces.filter(i => i.id !== id); break;
             case 'stair': nextState.stairs = state.stairs.filter(i => i.id !== id); break;
         }
-        return nextState;
+        return withHistory(state, nextState);
     })
 }), {
     name: 'floor-planner-state',

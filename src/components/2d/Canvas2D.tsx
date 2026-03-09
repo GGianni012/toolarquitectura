@@ -99,7 +99,7 @@ function snapRoomPlacement(rect: { x: number; y: number; width: number; height: 
 
 function snapRoomResize(
     rect: { x: number; y: number; width: number; height: number },
-    corner: 'tl' | 'tr' | 'bl' | 'br',
+    corner: 'tl' | 'tr' | 'bl' | 'br' | 'l' | 'r' | 't' | 'b',
     rooms: Room[],
     roomId: string
 ) {
@@ -225,6 +225,57 @@ function PointHandle({
             strokeWidth={2 / scale}
             style={{ cursor: 'pointer', pointerEvents: 'all' }}
         />
+    );
+}
+
+function EdgeInsertHandle({
+    x,
+    y,
+    scale,
+    onInsert
+}: {
+    x: number;
+    y: number;
+    scale: number;
+    onInsert: () => void;
+}) {
+    const radius = 7 / scale;
+
+    return (
+        <g
+            onPointerDown={(e) => {
+                e.stopPropagation();
+                onInsert();
+            }}
+            style={{ cursor: 'copy', pointerEvents: 'all' }}
+        >
+            <circle
+                cx={x}
+                cy={y}
+                r={radius}
+                fill="rgba(79, 172, 254, 0.95)"
+                stroke="white"
+                strokeWidth={2 / scale}
+            />
+            <line
+                x1={x - radius / 2}
+                y1={y}
+                x2={x + radius / 2}
+                y2={y}
+                stroke="white"
+                strokeWidth={2 / scale}
+                strokeLinecap="round"
+            />
+            <line
+                x1={x}
+                y1={y - radius / 2}
+                x2={x}
+                y2={y + radius / 2}
+                stroke="white"
+                strokeWidth={2 / scale}
+                strokeLinecap="round"
+            />
+        </g>
     );
 }
 
@@ -439,7 +490,7 @@ function RoomElement({
         enabled: interactMode === 'select' && !room.locked
     });
 
-    const bindResize = (corner: 'tl' | 'tr' | 'bl' | 'br') => useDrag(({ movement: [mx, my], event, memo, first }) => {
+    const bindResize = (corner: 'tl' | 'tr' | 'bl' | 'br' | 'l' | 'r' | 't' | 'b') => useDrag(({ movement: [mx, my], event, memo, first }) => {
         if (interactMode !== 'select' || room.locked) return memo;
         event.stopPropagation();
 
@@ -486,6 +537,10 @@ function RoomElement({
     const bindTR = bindResize('tr');
     const bindBL = bindResize('bl');
     const bindBR = bindResize('br');
+    const bindL = bindResize('l');
+    const bindR = bindResize('r');
+    const bindT = bindResize('t');
+    const bindB = bindResize('b');
     const screenWidth = room.width * GRID_SIZE * scale;
     const screenHeight = room.height * GRID_SIZE * scale;
     const showName = screenWidth > 70 && screenHeight > 34;
@@ -526,6 +581,10 @@ function RoomElement({
                     <div {...bindTR()} className="resize-handle tr" title="Resize Top Right" />
                     <div {...bindBL()} className="resize-handle bl" title="Resize Bottom Left" />
                     <div {...bindBR()} className="resize-handle br" title="Resize Bottom Right" />
+                    <div {...bindL()} className="resize-handle l" title="Resize Left" />
+                    <div {...bindR()} className="resize-handle r" title="Resize Right" />
+                    <div {...bindT()} className="resize-handle t" title="Resize Top" />
+                    <div {...bindB()} className="resize-handle b" title="Resize Bottom" />
                 </>
             )}
         </div>
@@ -600,7 +659,32 @@ function CylinderElement({ cylinder, scale }: { cylinder: Cylinder; scale: numbe
 
         return memo;
     }, { enabled: interactMode === 'select' && !cylinder.locked });
+    const bindRadius = (direction: 'east' | 'west' | 'north' | 'south') => useDrag(({ movement: [mx, my], first, memo, event }) => {
+        if (interactMode !== 'select' || cylinder.locked) return memo;
+        event.stopPropagation();
+        if (first || !memo) memo = { radius: cylinder.radius };
+
+        const deltaX = roundUnit((mx / scale) / GRID_SIZE);
+        const deltaY = roundUnit((my / scale) / GRID_SIZE);
+        const directionalDelta = direction === 'east'
+            ? deltaX
+            : direction === 'west'
+                ? -deltaX
+                : direction === 'south'
+                    ? deltaY
+                    : -deltaY;
+
+        updateCylinder(cylinder.id, {
+            radius: Math.max(0.25, roundUnit(memo.radius + directionalDelta))
+        });
+
+        return memo;
+    }, { enabled: interactMode === 'select' && !cylinder.locked });
     const showLabel = cylinder.radius * 2 * GRID_SIZE * scale > 70;
+    const bindEast = bindRadius('east');
+    const bindWest = bindRadius('west');
+    const bindNorth = bindRadius('north');
+    const bindSouth = bindRadius('south');
 
     return (
         <div
@@ -624,6 +708,14 @@ function CylinderElement({ cylinder, scale }: { cylinder: Cylinder; scale: numbe
                 <div className="room-label" style={{ fontSize: getAdaptiveTextSize(scale, 13), padding: `0 ${getAdaptiveTextSize(scale, 8)}px` }}>
                     {cylinder.name}
                 </div>
+            )}
+            {interactMode === 'select' && !cylinder.locked && isSelected && (
+                <>
+                    <div {...bindEast()} className="resize-handle r" title="Expand radius east" />
+                    <div {...bindWest()} className="resize-handle l" title="Expand radius west" />
+                    <div {...bindNorth()} className="resize-handle t" title="Expand radius north" />
+                    <div {...bindSouth()} className="resize-handle b" title="Expand radius south" />
+                </>
             )}
         </div>
     );
@@ -776,6 +868,40 @@ function SurfaceElement({ surface, scale }: { surface: Surface; scale: number })
                 strokeWidth={isSelected ? 3 / scale : 1 / scale}
                 style={{ cursor: interactMode === 'select' ? (surface.locked ? 'pointer' : 'grab') : 'default', pointerEvents: interactMode === 'select' ? 'all' : 'none' }}
             />
+            {isSelected && surface.points.map((point, index) => {
+                const nextPoint = surface.points[(index + 1) % surface.points.length];
+                const insertPoint = {
+                    x: roundUnit((point.x + nextPoint.x) / 2),
+                    y: roundUnit((point.y + nextPoint.y) / 2)
+                };
+
+                return (
+                    <g key={`surface-edge-${index}`}>
+                        <line
+                            x1={point.x * GRID_SIZE}
+                            y1={point.y * GRID_SIZE}
+                            x2={nextPoint.x * GRID_SIZE}
+                            y2={nextPoint.y * GRID_SIZE}
+                            stroke="rgba(255,255,255,0.75)"
+                            strokeWidth={1.5 / scale}
+                            strokeDasharray={`${8 / scale} ${6 / scale}`}
+                            style={{ pointerEvents: 'none' }}
+                        />
+                        {!surface.locked && (
+                            <EdgeInsertHandle
+                                x={insertPoint.x * GRID_SIZE}
+                                y={insertPoint.y * GRID_SIZE}
+                                scale={scale}
+                                onInsert={() => {
+                                    const nextPoints = [...surface.points];
+                                    nextPoints.splice(index + 1, 0, insertPoint);
+                                    updateSurface(surface.id, { points: nextPoints });
+                                }}
+                            />
+                        )}
+                    </g>
+                );
+            })}
             {isSelected && !surface.locked && surface.points.map((point, index) => (
                 <PointHandle
                     key={index}

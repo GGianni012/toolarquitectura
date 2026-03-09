@@ -22,6 +22,10 @@ export default function Sidebar() {
     } = useStore();
     const importInputRef = useRef<HTMLInputElement>(null);
     const activeFloor = floors.find((floor) => floor.id === activeFloorId);
+    const sortedFloors = [...floors].sort((a, b) => a.elevation - b.elevation);
+    const previousFloorById = new Map(
+        sortedFloors.map((floor, index) => [floor.id, sortedFloors[index - 1] || null])
+    );
 
     const handleAddDoor = () => {
         const floorRooms = rooms.filter((room) => room.floorId === activeFloorId);
@@ -41,7 +45,6 @@ export default function Sidebar() {
             return;
         }
 
-        const sortedFloors = [...floors].sort((a, b) => a.elevation - b.elevation);
         const activeIndex = sortedFloors.findIndex((floor) => floor.id === activeFloorId);
         const targetFloor = sortedFloors[activeIndex + 1] || sortedFloors[activeIndex - 1];
 
@@ -137,8 +140,35 @@ export default function Sidebar() {
                                 </button>
                             </div>
                             <div className="level-card-meta">
-                                Elevation {floor.elevation.toFixed(1)}m
+                                Base {floor.elevation.toFixed(1)}m • Top {(floor.elevation + floor.height).toFixed(1)}m
+                                {previousFloorById.get(floor.id)
+                                    ? ` • Gap ${(floor.elevation - ((previousFloorById.get(floor.id)?.elevation || 0) + (previousFloorById.get(floor.id)?.height || 0))).toFixed(1)}m`
+                                    : ''}
                                 {floor.reference ? ` • ${floor.reference.kind.toUpperCase()} ref` : ''}
+                            </div>
+                            <div
+                                className="level-card-controls"
+                                onClick={(event) => event.stopPropagation()}
+                            >
+                                <label className="level-inline-field">
+                                    <span>Base</span>
+                                    <input
+                                        type="number"
+                                        step="0.1"
+                                        value={floor.elevation}
+                                        onChange={(event) => updateFloor(floor.id, { elevation: parseFloat(event.target.value) || 0 })}
+                                    />
+                                </label>
+                                <label className="level-inline-field">
+                                    <span>Height</span>
+                                    <input
+                                        type="number"
+                                        step="0.1"
+                                        min="2"
+                                        value={floor.height}
+                                        onChange={(event) => updateFloor(floor.id, { height: parseFloat(event.target.value) || 3.2 })}
+                                    />
+                                </label>
                             </div>
                         </div>
                     ))}
@@ -193,7 +223,6 @@ export default function Sidebar() {
                         className="tool-card"
                         draggable
                         onDragStart={(e) => {
-                            const sortedFloors = [...floors].sort((a, b) => a.elevation - b.elevation);
                             const activeIndex = sortedFloors.findIndex((floor) => floor.id === activeFloorId);
                             const targetFloor = sortedFloors[activeIndex + 1] || sortedFloors[activeIndex - 1];
                             handleDragStart(e, 'stair', {

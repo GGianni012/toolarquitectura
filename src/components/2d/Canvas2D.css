@@ -248,6 +248,30 @@
     cursor: se-resize;
 }
 
+.resize-handle.l {
+    left: -8px;
+    top: calc(50% - 8px);
+    cursor: ew-resize;
+}
+
+.resize-handle.r {
+    right: -8px;
+    top: calc(50% - 8px);
+    cursor: ew-resize;
+}
+
+.resize-handle.t {
+    top: -8px;
+    left: calc(50% - 8px);
+    cursor: ns-resize;
+}
+
+.resize-handle.b {
+    bottom: -8px;
+    left: calc(50% - 8px);
+    cursor: ns-resize;
+}
+
 .resize-handle:hover {
     transform: scale(1.3);
 }

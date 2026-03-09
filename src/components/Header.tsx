@@ -1,8 +1,8 @@
-import { Cuboid, MousePointer2, PenLine } from 'lucide-react';
+import { Cuboid, MousePointer2, PenLine, Undo2 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 
 export default function Header() {
-    const { mode, setMode, interactMode, setInteractMode, floors, activeFloorId } = useStore();
+    const { mode, setMode, interactMode, setInteractMode, floors, activeFloorId, undo, canUndo } = useStore();
     const activeFloor = floors.find((floor) => floor.id === activeFloorId);
 
     return (
@@ -36,19 +36,31 @@ export default function Header() {
                 </div>
             )}
 
-            <div className="mode-toggle">
+            <div className="header-actions">
                 <button
-                    className={`mode-btn ${mode === '2D' ? 'active' : ''}`}
-                    onClick={() => setMode('2D')}
+                    className={`header-undo-btn ${canUndo ? '' : 'disabled'}`}
+                    onClick={undo}
+                    disabled={!canUndo}
+                    title="Undo last change"
                 >
-                    2D Planner
+                    <Undo2 size={16} />
+                    Undo
                 </button>
-                <button
-                    className={`mode-btn ${mode === '3D' ? 'active' : ''}`}
-                    onClick={() => setMode('3D')}
-                >
-                    3D Viewer
-                </button>
+
+                <div className="mode-toggle">
+                    <button
+                        className={`mode-btn ${mode === '2D' ? 'active' : ''}`}
+                        onClick={() => setMode('2D')}
+                    >
+                        2D Planner
+                    </button>
+                    <button
+                        className={`mode-btn ${mode === '3D' ? 'active' : ''}`}
+                        onClick={() => setMode('3D')}
+                    >
+                        3D Viewer
+                    </button>
+                </div>
             </div>
         </header>
     );
