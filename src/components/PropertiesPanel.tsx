@@ -9,6 +9,7 @@ import { clampSpiralCoreRadius, getStairKind } from '../utils/stairUtils';
 import './PropertiesPanel.css';
 
 const PLAN_UNIT_IN_METERS = 0.5;
+type LockedElementSummary = { id: string; type: 'room' | 'furniture' | 'wall' | 'door' | 'cylinder' | 'surface' | 'stair'; label: string };
 
 function formatMeters(value: number) {
     const decimals = Math.abs(value) >= 10 ? 1 : 2;
@@ -113,6 +114,56 @@ export default function PropertiesPanel() {
                     ...data
                 }
             });
+        };
+        const lockedElementsOnActiveFloor: LockedElementSummary[] = [
+            ...rooms
+                .filter((room) => room.floorId === activeFloor.id && room.locked)
+                .map((room) => ({ id: room.id, type: 'room' as const, label: room.name || 'Locked room' })),
+            ...furniture
+                .filter((item) => item.floorId === activeFloor.id && item.locked)
+                .map((item) => ({ id: item.id, type: 'furniture' as const, label: item.name || 'Locked furniture' })),
+            ...walls
+                .filter((wall) => wall.floorId === activeFloor.id && wall.locked)
+                .map((wall) => ({ id: wall.id, type: 'wall' as const, label: wall.name || 'Locked wall' })),
+            ...doors
+                .filter((door) => door.floorId === activeFloor.id && door.locked)
+                .map((door) => ({ id: door.id, type: 'door' as const, label: door.name || 'Locked door' })),
+            ...cylinders
+                .filter((cylinder) => cylinder.floorId === activeFloor.id && cylinder.locked)
+                .map((cylinder) => ({ id: cylinder.id, type: 'cylinder' as const, label: cylinder.name || 'Locked cylinder' })),
+            ...surfaces
+                .filter((surface) => surface.floorId === activeFloor.id && surface.locked)
+                .map((surface) => ({ id: surface.id, type: 'surface' as const, label: surface.name || 'Locked surface' })),
+            ...stairs
+                .filter((stair) => stair.floorId === activeFloor.id && stair.locked)
+                .map((stair) => ({ id: stair.id, type: 'stair' as const, label: stair.name || 'Locked stair' }))
+        ].sort((a, b) => a.label.localeCompare(b.label));
+        const unlockLockedElement = (lockedElement: LockedElementSummary) => {
+            switch (lockedElement.type) {
+                case 'room':
+                    updateRoom(lockedElement.id, { locked: false });
+                    break;
+                case 'furniture':
+                    updateFurniture(lockedElement.id, { locked: false });
+                    break;
+                case 'wall':
+                    updateWall(lockedElement.id, { locked: false });
+                    break;
+                case 'door':
+                    updateDoor(lockedElement.id, { locked: false });
+                    break;
+                case 'cylinder':
+                    updateCylinder(lockedElement.id, { locked: false });
+                    break;
+                case 'surface':
+                    updateSurface(lockedElement.id, { locked: false });
+                    break;
+                case 'stair':
+                    updateStair(lockedElement.id, { locked: false });
+                    break;
+                default:
+                    break;
+            }
         };
 
         return (
@@ -310,6 +361,33 @@ export default function PropertiesPanel() {
                                 Remove reference
                             </button>
                         </>
+                    )}
+
+                    {lockedElementsOnActiveFloor.length > 0 && (
+                        <div className="property-row stacked">
+                            <label>Locked On This Level</label>
+                            <div className="locked-elements-list">
+                                {lockedElementsOnActiveFloor.map((lockedElement) => (
+                                    <div key={`${lockedElement.type}-${lockedElement.id}`} className="locked-element-item">
+                                        <button
+                                            type="button"
+                                            className="locked-element-select"
+                                            onClick={() => setSelectedElement({ id: lockedElement.id, type: lockedElement.type })}
+                                        >
+                                            <span>{lockedElement.label}</span>
+                                            <strong>{lockedElement.type}</strong>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="locked-element-unlock"
+                                            onClick={() => unlockLockedElement(lockedElement)}
+                                        >
+                                            Unlock
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
                     )}
 
                     <p className="property-hint">
