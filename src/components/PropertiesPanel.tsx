@@ -5,6 +5,7 @@ import { GripHorizontal, Lock, Unlock, X } from 'lucide-react';
 import { getRoomEdgeCount, getRoomEdgeLabel, isRoomWallVisible } from '../utils/buildingGeometry';
 import { getFurniturePreset } from '../utils/furnitureCatalog';
 import { normalizeReferenceRotation } from '../utils/referenceTransforms';
+import { clampSpiralCoreRadius, getStairKind } from '../utils/stairUtils';
 import './PropertiesPanel.css';
 
 const PLAN_UNIT_IN_METERS = 0.5;
@@ -410,11 +411,23 @@ export default function PropertiesPanel() {
                 ];
             }
             case 'stair':
-                return [
+                const stairKind = getStairKind(element);
+                const stairRows = [
                     { label: 'Origin', value: `${formatPlanMeasure(element.x)}, ${formatPlanMeasure(element.y)}` },
+                    { label: 'Style', value: stairKind === 'spiral' ? 'Spiral' : 'Straight' },
                     { label: 'Width', value: formatPlanMeasure(element.width) },
-                    { label: 'Run', value: formatPlanMeasure(element.height) }
+                    { label: stairKind === 'spiral' ? 'Depth' : 'Run', value: formatPlanMeasure(element.height) },
+                    { label: 'Steps', value: `${Math.max(stairKind === 'spiral' ? 8 : 6, Math.round(element.stepCount || 0))}` }
                 ];
+
+                if (stairKind === 'spiral') {
+                    stairRows.push(
+                        { label: 'Turns', value: `${(element.turns || 1.25).toFixed(2).replace(/\.?0+$/, '')}x` },
+                        { label: 'Core', value: formatPlanMeasure(clampSpiralCoreRadius(element.width, element.height, element.coreRadius)) }
+                    );
+                }
+
+                return stairRows;
             default:
                 return [];
         }
@@ -779,6 +792,24 @@ export default function PropertiesPanel() {
 
                 {type === 'stair' && (
                     <>
+                        <div className="property-row stacked">
+                            <label>Style</label>
+                            <div className="floor-choice-group">
+                                {[
+                                    { id: 'straight', name: 'Straight' },
+                                    { id: 'spiral', name: 'Spiral' }
+                                ].map((option) => (
+                                    <button
+                                        key={option.id}
+                                        type="button"
+                                        className={`floor-choice-btn ${getStairKind(element) === option.id ? 'active' : ''}`}
+                                        onClick={() => handleChange('kind', option.id)}
+                                    >
+                                        {option.name}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
                         <div className="property-row">
                             <label>X</label>
                             <input
@@ -806,35 +837,98 @@ export default function PropertiesPanel() {
                             />
                         </div>
                         <div className="property-row stacked">
-                            <label>Direction</label>
-                            <select
-                                value={element.direction}
-                                onChange={(e) => handleChange('direction', e.target.value)}
-                            >
-                                <option value="north">North</option>
-                                <option value="south">South</option>
-                                <option value="east">East</option>
-                                <option value="west">West</option>
-                            </select>
+                            <label>{getStairKind(element) === 'spiral' ? 'Spin' : 'Direction'}</label>
+                            {getStairKind(element) === 'spiral' ? (
+                                <div className="floor-choice-group">
+                                    {[
+                                        { id: 'clockwise', name: 'Clockwise' },
+                                        { id: 'counterclockwise', name: 'Counterclockwise' }
+                                    ].map((option) => (
+                                        <button
+                                            key={option.id}
+                                            type="button"
+                                            className={`floor-choice-btn ${(element.spin || 'clockwise') === option.id ? 'active' : ''}`}
+                                            onClick={() => handleChange('spin', option.id)}
+                                        >
+                                            {option.name}
+                                        </button>
+                                    ))}
+                                </div>
+                            ) : (
+                                <select
+                                    value={element.direction}
+                                    onChange={(e) => handleChange('direction', e.target.value)}
+                                >
+                                    <option value="north">North</option>
+                                    <option value="south">South</option>
+                                    <option value="east">East</option>
+                                    <option value="west">West</option>
+                                </select>
+                            )}
                         </div>
                         <div className="property-row">
                             <label>Width</label>
                             <input
                                 type="number"
-                                min="1"
+                                step="0.05"
+                                min={getStairKind(element) === 'spiral' ? 1.2 : 1}
                                 value={element.width}
                                 onChange={(e) => handleChange('width', parseFloat(e.target.value) || 1)}
                             />
                         </div>
                         <div className="property-row">
-                            <label>Run</label>
+                            <label>{getStairKind(element) === 'spiral' ? 'Depth' : 'Run'}</label>
                             <input
                                 type="number"
-                                min="2"
+                                step="0.05"
+                                min={getStairKind(element) === 'spiral' ? 1.2 : 2}
                                 value={element.height}
                                 onChange={(e) => handleChange('height', parseFloat(e.target.value) || 2)}
                             />
                         </div>
+                        <div className="property-row">
+                            <label>Step Count</label>
+                            <input
+                                type="number"
+                                min={getStairKind(element) === 'spiral' ? 8 : 6}
+                                step="1"
+                                value={Math.max(getStairKind(element) === 'spiral' ? 8 : 6, Math.round(element.stepCount || 0))}
+                                onChange={(e) => handleChange('stepCount', Math.max(getStairKind(element) === 'spiral' ? 8 : 6, parseInt(e.target.value, 10) || 0))}
+                            />
+                        </div>
+                        {getStairKind(element) === 'spiral' && (
+                            <>
+                                <div className="property-row">
+                                    <label>Turns</label>
+                                    <input
+                                        type="number"
+                                        step="0.05"
+                                        min="0.5"
+                                        value={element.turns || 1.25}
+                                        onChange={(e) => handleChange('turns', parseFloat(e.target.value) || 1.25)}
+                                    />
+                                </div>
+                                <div className="property-row">
+                                    <label>Core Radius</label>
+                                    <input
+                                        type="number"
+                                        step="0.05"
+                                        min="0.16"
+                                        value={clampSpiralCoreRadius(element.width, element.height, element.coreRadius)}
+                                        onChange={(e) => handleChange('coreRadius', parseFloat(e.target.value) || 0.16)}
+                                    />
+                                </div>
+                                <div className="property-row">
+                                    <label>Start Angle</label>
+                                    <input
+                                        type="number"
+                                        step="5"
+                                        value={element.startAngle || 270}
+                                        onChange={(e) => handleChange('startAngle', parseFloat(e.target.value) || 0)}
+                                    />
+                                </div>
+                            </>
+                        )}
                     </>
                 )}
 

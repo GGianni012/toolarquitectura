@@ -17,6 +17,7 @@ import {
 } from '../../utils/buildingGeometry';
 import { getFurniturePreset } from '../../utils/furnitureCatalog';
 import { getReferenceRotatedSize, normalizeReferenceRotation } from '../../utils/referenceTransforms';
+import { clampSpiralCoreRadius, getStairKind } from '../../utils/stairUtils';
 import './Canvas2D.css';
 
 const GRID_SIZE = 50;
@@ -55,6 +56,52 @@ function toMeters(units: number) {
 
 function getAdaptiveTextSize(scale: number, basePx: number) {
     return clamp(basePx / Math.max(scale, 0.35), 4, 42);
+}
+
+function getEllipsePoint(cx: number, cy: number, radiusX: number, radiusY: number, angle: number) {
+    return {
+        x: cx + Math.cos(angle) * radiusX,
+        y: cy + Math.sin(angle) * radiusY
+    };
+}
+
+function buildSpiralPreviewPath({
+    cx,
+    cy,
+    innerRadiusX,
+    innerRadiusY,
+    outerRadiusX,
+    outerRadiusY,
+    startAngle,
+    turns,
+    spin
+}: {
+    cx: number;
+    cy: number;
+    innerRadiusX: number;
+    innerRadiusY: number;
+    outerRadiusX: number;
+    outerRadiusY: number;
+    startAngle: number;
+    turns: number;
+    spin: 'clockwise' | 'counterclockwise';
+}) {
+    const sampleCount = 56;
+    const sweep = Math.PI * 2 * Math.max(turns, 0.5) * (spin === 'clockwise' ? -1 : 1);
+
+    return Array.from({ length: sampleCount + 1 }, (_, index) => {
+        const t = index / sampleCount;
+        const angle = startAngle + sweep * t;
+        const point = getEllipsePoint(
+            cx,
+            cy,
+            innerRadiusX + (outerRadiusX - innerRadiusX) * t,
+            innerRadiusY + (outerRadiusY - innerRadiusY) * t,
+            angle
+        );
+
+        return `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`;
+    }).join(' ');
 }
 
 function getGhostFloorOpacity(distance: number) {
@@ -1376,6 +1423,8 @@ function StairElement({
     const floor = floors.find((f) => f.id === stair.floorId);
     const layer = (floor?.layerSettings || defaultLayerSettings).stairs;
     if (layer && !layer.visible) return null;
+    const stairKind = getStairKind(stair);
+    const isSpiral = stairKind === 'spiral';
 
     const bind = useDrag(({ movement: [mx, my], first, memo }) => {
         if (interactMode !== 'select' || stair.locked) return memo;
@@ -1419,6 +1468,44 @@ function StairElement({
     const screenHeight = stair.height * GRID_SIZE * scale;
     const showArrow = screenWidth > 60 && screenHeight > 40;
     const showLabel = screenWidth > 95 && screenHeight > 70;
+    const viewWidth = stair.width * GRID_SIZE;
+    const viewHeight = stair.height * GRID_SIZE;
+    const centerX = viewWidth / 2;
+    const centerY = viewHeight / 2;
+    const outerPadding = 16;
+    const outerRadiusX = Math.max(Math.min(viewWidth / 2 - outerPadding, viewWidth / 2 - 6), 10);
+    const outerRadiusY = Math.max(Math.min(viewHeight / 2 - outerPadding, viewHeight / 2 - 6), 10);
+    const coreRadius = clampSpiralCoreRadius(stair.width, stair.height, stair.coreRadius) * GRID_SIZE;
+    const innerRadiusX = Math.min(Math.max(coreRadius, 9), Math.max(outerRadiusX - 14, 9));
+    const innerRadiusY = Math.min(Math.max(coreRadius, 9), Math.max(outerRadiusY - 14, 9));
+    const spiralTurns = Math.max(stair.turns || 1.25, 0.5);
+    const spiralStepCount = Math.max(8, Math.round(stair.stepCount || 16));
+    const startAngle = ((stair.startAngle || 270) * Math.PI) / 180;
+    const sweep = Math.PI * 2 * spiralTurns * ((stair.spin || 'clockwise') === 'clockwise' ? -1 : 1);
+    const spiralPath = buildSpiralPreviewPath({
+        cx: centerX,
+        cy: centerY,
+        innerRadiusX: Math.max(innerRadiusX * 0.55, 10),
+        innerRadiusY: Math.max(innerRadiusY * 0.55, 10),
+        outerRadiusX,
+        outerRadiusY,
+        startAngle,
+        turns: spiralTurns,
+        spin: stair.spin || 'clockwise'
+    });
+    const spiralGuideLines = Array.from({ length: Math.min(spiralStepCount, 24) }, (_, index) => {
+        const t = (index + 0.5) / spiralStepCount;
+        const angle = startAngle + sweep * t;
+        const innerPoint = getEllipsePoint(centerX, centerY, innerRadiusX, innerRadiusY, angle);
+        const outerPoint = getEllipsePoint(centerX, centerY, outerRadiusX, outerRadiusY, angle);
+
+        return {
+            key: `${stair.id}-spiral-guide-${index}`,
+            innerPoint,
+            outerPoint
+        };
+    });
+    const spiralEndPoint = getEllipsePoint(centerX, centerY, outerRadiusX, outerRadiusY, startAngle + sweep);
 
     return (
         <div
@@ -1434,24 +1521,94 @@ function StairElement({
                 width: stair.width * GRID_SIZE,
                 height: stair.height * GRID_SIZE,
                 backgroundColor: stair.color || '#ffd166',
+                backgroundImage: isSpiral
+                    ? 'radial-gradient(circle at 50% 50%, rgba(255,255,255,0.28), rgba(255,255,255,0.08) 48%, rgba(0,0,0,0.1) 100%)'
+                    : undefined,
                 boxShadow: isSelected ? '0 0 0 3px #fca5a5' : undefined,
-                opacity: layer?.opacity ?? 1
+                opacity: layer?.opacity ?? 1,
+                borderRadius: isSpiral ? '50%' : undefined
             }}
         >
-            {showArrow && (
-                <div className="stair-arrow" style={{ fontSize: getAdaptiveTextSize(scale, 11) }}>
-                    {stair.direction.toUpperCase()}
-                </div>
-            )}
-            {showLabel && (
-                <div className="stair-label" style={{ fontSize: getAdaptiveTextSize(scale, 12) }}>
-                    {targetFloor ? targetFloor.name : 'Target floor'}
-                </div>
+            {isSpiral ? (
+                <>
+                    <svg
+                        className="stair-spiral-canvas"
+                        viewBox={`0 0 ${viewWidth} ${viewHeight}`}
+                        preserveAspectRatio="none"
+                    >
+                        <ellipse
+                            cx={centerX}
+                            cy={centerY}
+                            rx={outerRadiusX}
+                            ry={outerRadiusY}
+                            fill="rgba(255,255,255,0.08)"
+                            stroke="rgba(255,255,255,0.72)"
+                            strokeWidth={2}
+                        />
+                        {spiralGuideLines.map((guide) => (
+                            <line
+                                key={guide.key}
+                                x1={guide.innerPoint.x}
+                                y1={guide.innerPoint.y}
+                                x2={guide.outerPoint.x}
+                                y2={guide.outerPoint.y}
+                                stroke="rgba(255,255,255,0.32)"
+                                strokeWidth={1.4}
+                            />
+                        ))}
+                        <path
+                            d={spiralPath}
+                            fill="none"
+                            stroke="rgba(12,18,28,0.8)"
+                            strokeWidth={4}
+                            strokeLinecap="round"
+                        />
+                        <ellipse
+                            cx={centerX}
+                            cy={centerY}
+                            rx={innerRadiusX}
+                            ry={innerRadiusY}
+                            fill="rgba(10,16,24,0.22)"
+                            stroke="rgba(255,255,255,0.75)"
+                            strokeWidth={2}
+                        />
+                        <circle
+                            cx={spiralEndPoint.x}
+                            cy={spiralEndPoint.y}
+                            r={Math.max(Math.min(viewWidth, viewHeight) * 0.03, 5)}
+                            fill="rgba(255,255,255,0.9)"
+                        />
+                    </svg>
+                    {showArrow && (
+                        <div className="stair-arrow stair-arrow-spiral" style={{ fontSize: getAdaptiveTextSize(scale, 11) }}>
+                            {(stair.spin || 'clockwise') === 'clockwise' ? 'CW' : 'CCW'}
+                        </div>
+                    )}
+                    {showLabel && (
+                        <div className="stair-label stair-label-spiral" style={{ fontSize: getAdaptiveTextSize(scale, 12) }}>
+                            {targetFloor ? targetFloor.name : 'Target floor'}
+                            <span>{`${spiralStepCount} steps`}</span>
+                        </div>
+                    )}
+                </>
+            ) : (
+                <>
+                    {showArrow && (
+                        <div className="stair-arrow" style={{ fontSize: getAdaptiveTextSize(scale, 11) }}>
+                            {stair.direction.toUpperCase()}
+                        </div>
+                    )}
+                    {showLabel && (
+                        <div className="stair-label" style={{ fontSize: getAdaptiveTextSize(scale, 12) }}>
+                            {targetFloor ? targetFloor.name : 'Target floor'}
+                        </div>
+                    )}
+                </>
             )}
             {interactMode === 'select' && !stair.locked && isSelected && (
                 <>
-                    <div {...bindWidth()} className="resize-handle r" title="Resize width" />
-                    <div {...bindHeight()} className="resize-handle b" title="Resize run" />
+                    <div {...bindWidth()} className="resize-handle r" title={isSpiral ? 'Resize diameter X' : 'Resize width'} />
+                    <div {...bindHeight()} className="resize-handle b" title={isSpiral ? 'Resize diameter Y' : 'Resize run'} />
                 </>
             )}
         </div>

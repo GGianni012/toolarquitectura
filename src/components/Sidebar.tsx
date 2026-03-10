@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { useStore, InteractMode, defaultLayerSettings } from '../store/useStore';
-import { Square, Circle, DoorOpen, MousePointer2, PenTool, Hexagon, Layers3, Plus, Eye, EyeOff, Upload, ArrowUpDown } from 'lucide-react';
+import { Square, Circle, DoorOpen, MousePointer2, PenTool, Hexagon, Layers3, Plus, Eye, EyeOff, Upload, ArrowUpDown, RotateCw } from 'lucide-react';
 import { importReferenceFile } from '../utils/referenceImport';
 import { autoTraceReference } from '../utils/autoTraceReference';
 import { FURNITURE_PRESETS } from '../utils/furnitureCatalog';
@@ -60,6 +60,46 @@ export default function Sidebar() {
         sortedFloors.map((floor, index) => [floor.id, sortedFloors[index - 1] || null])
     );
 
+    const getDefaultTargetFloor = () => {
+        const activeIndex = sortedFloors.findIndex((floor) => floor.id === activeFloorId);
+        return sortedFloors[activeIndex + 1] || sortedFloors[activeIndex - 1] || null;
+    };
+
+    const buildStairPayload = (kind: 'straight' | 'spiral') => {
+        const targetFloor = getDefaultTargetFloor();
+
+        if (!targetFloor) {
+            return null;
+        }
+
+        if (kind === 'spiral') {
+            return {
+                width: 2.8,
+                height: 2.8,
+                targetFloorId: targetFloor.id,
+                direction: 'north' as const,
+                kind: 'spiral' as const,
+                spin: 'clockwise' as const,
+                turns: 1.35,
+                stepCount: 18,
+                startAngle: 270,
+                coreRadius: 0.4,
+                name: `Spiral stair to ${targetFloor.name}`,
+                color: '#ff9f68'
+            };
+        }
+
+        return {
+            width: 2,
+            height: 4,
+            targetFloorId: targetFloor.id,
+            direction: 'north' as const,
+            kind: 'straight' as const,
+            name: `Stair to ${targetFloor.name}`,
+            color: '#ffd166'
+        };
+    };
+
     const handleAddDoor = () => {
         const floorRooms = rooms.filter((room) => room.floorId === activeFloorId);
         const floorWalls = walls.filter((wall) => wall.floorId === activeFloorId);
@@ -72,28 +112,21 @@ export default function Sidebar() {
         setInteractMode('place_door');
     };
 
-    const handleAddStair = () => {
+    const handleAddStair = (kind: 'straight' | 'spiral' = 'straight') => {
         if (floors.length < 2) {
             alert('Create another level first so the stair has somewhere to connect.');
             return;
         }
 
-        const activeIndex = sortedFloors.findIndex((floor) => floor.id === activeFloorId);
-        const targetFloor = sortedFloors[activeIndex + 1] || sortedFloors[activeIndex - 1];
-
-        if (!targetFloor) {
+        const payload = buildStairPayload(kind);
+        if (!payload) {
             return;
         }
 
         addStair({
             x: 2,
             y: 2,
-            width: 2,
-            height: 4,
-            targetFloorId: targetFloor.id,
-            direction: 'north',
-            name: `Stair to ${targetFloor.name}`,
-            color: '#ffd166'
+            ...payload
         });
     };
 
@@ -331,21 +364,44 @@ export default function Sidebar() {
                         className="tool-card"
                         draggable
                         onDragStart={(e) => {
-                            const activeIndex = sortedFloors.findIndex((floor) => floor.id === activeFloorId);
-                            const targetFloor = sortedFloors[activeIndex + 1] || sortedFloors[activeIndex - 1];
-                            handleDragStart(e, 'stair', {
+                            const payload = buildStairPayload('straight');
+                            handleDragStart(e, 'stair', payload || {
                                 width: 2,
                                 height: 4,
-                                targetFloorId: targetFloor?.id,
                                 direction: 'north',
-                                name: targetFloor ? `Stair to ${targetFloor.name}` : 'New Stair',
+                                kind: 'straight',
+                                name: 'New Stair',
                                 color: '#ffd166'
                             });
                         }}
-                        onClick={handleAddStair}
+                        onClick={() => handleAddStair('straight')}
                     >
                         <ArrowUpDown size={24} />
                         <span>Stair</span>
+                    </div>
+                    <div
+                        className="tool-card"
+                        draggable
+                        onDragStart={(e) => {
+                            const payload = buildStairPayload('spiral');
+                            handleDragStart(e, 'stair', payload || {
+                                width: 2.8,
+                                height: 2.8,
+                                direction: 'north',
+                                kind: 'spiral',
+                                spin: 'clockwise',
+                                turns: 1.35,
+                                stepCount: 18,
+                                startAngle: 270,
+                                coreRadius: 0.4,
+                                name: 'Spiral Stair',
+                                color: '#ff9f68'
+                            });
+                        }}
+                        onClick={() => handleAddStair('spiral')}
+                    >
+                        <RotateCw size={24} />
+                        <span>Spiral Stair</span>
                     </div>
                 </div>
             </div>

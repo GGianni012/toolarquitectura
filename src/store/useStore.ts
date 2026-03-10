@@ -1,11 +1,14 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { getStairDefaults } from '../utils/stairUtils';
 
 export type Mode = '2D' | '3D';
 export type ElementType = 'room' | 'furniture' | 'wall' | 'door' | 'cylinder' | 'surface' | 'stair';
 export type OpenSide = 'north' | 'south' | 'east' | 'west' | 'none';
 export type RoomEdge = Exclude<OpenSide, 'none'>;
 export type StairDirection = Exclude<OpenSide, 'none'>;
+export type StairKind = 'straight' | 'spiral';
+export type StairSpin = 'clockwise' | 'counterclockwise';
 export type DoorHostKind = 'wall' | 'room';
 export type FurnitureType =
     | 'sofa'
@@ -138,6 +141,12 @@ export interface Stair extends PositionedElement {
     height: number;
     targetFloorId: string;
     direction: StairDirection;
+    kind?: StairKind;
+    spin?: StairSpin;
+    turns?: number;
+    stepCount?: number;
+    startAngle?: number;
+    coreRadius?: number;
 }
 
 export type InteractMode = 'select' | 'draw_wall' | 'draw_surface' | 'place_door' | 'place_cylinder';
@@ -426,10 +435,22 @@ export const useStore = create<AppState>()(persist((set) => ({
     })),
 
     addStair: (stair) => set((state) => withHistory(state, {
-        stairs: [...state.stairs, { ...stair, floorId: stair.floorId || state.activeFloorId, id: generateId() }]
+        stairs: [...state.stairs, {
+            ...stair,
+            ...getStairDefaults(stair),
+            floorId: stair.floorId || state.activeFloorId,
+            id: generateId()
+        }]
     })),
     updateStair: (id, data) => set((state) => withHistory(state, {
-        stairs: state.stairs.map(s => s.id === id ? { ...s, ...data } : s)
+        stairs: state.stairs.map((s) => {
+            if (s.id !== id) return s;
+            const next = { ...s, ...data };
+            return {
+                ...next,
+                ...getStairDefaults(next)
+            };
+        })
     })),
 
     applyAutoTraceResult: (floorId, data) => set((state) => withHistory(state, {

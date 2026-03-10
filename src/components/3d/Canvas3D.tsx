@@ -19,6 +19,7 @@ import {
     type RoomWallSegment
 } from '../../utils/buildingGeometry';
 import { getFurniturePreset } from '../../utils/furnitureCatalog';
+import { clampSpiralCoreRadius, directionToAngle, getStairKind } from '../../utils/stairUtils';
 
 const DEFAULT_LEVEL_HEIGHT = 3.2;
 const WALL_THICKNESS = 0.18;
@@ -975,15 +976,93 @@ function Stair3D({ stair, floor, targetFloor }: { stair: Stair; floor: Floor; ta
         return null;
     }
 
-    const stepCount = Math.max(6, Math.ceil(Math.abs(elevationDelta) / 0.18));
+    const stairKind = getStairKind(stair);
+    const stepCount = Math.max(
+        stairKind === 'spiral' ? 8 : 6,
+        Math.round(stair.stepCount || 0),
+        Math.ceil(Math.abs(elevationDelta) / 0.2)
+    );
     const treadThickness = 0.08;
+    const baseX = stair.x + stair.width / 2;
+    const baseZ = stair.y + stair.height / 2;
+
+    if (stairKind === 'spiral') {
+        const turns = Math.max(stair.turns || 1.25, 0.5);
+        const spin = stair.spin || 'clockwise';
+        const sweep = Math.PI * 2 * turns * (spin === 'clockwise' ? -1 : 1);
+        const startAngle = THREE.MathUtils.degToRad(stair.startAngle ?? directionToAngle(stair.direction));
+        const risePerStep = elevationDelta / stepCount;
+        const outerRadiusX = Math.max(stair.width / 2 - 0.06, 0.45);
+        const outerRadiusZ = Math.max(stair.height / 2 - 0.06, 0.45);
+        const coreRadius = clampSpiralCoreRadius(stair.width, stair.height, stair.coreRadius);
+        const radialSpan = Math.max(Math.min(outerRadiusX, outerRadiusZ) - coreRadius, 0.34);
+        const midRadiusX = coreRadius + (outerRadiusX - coreRadius) * 0.5;
+        const midRadiusZ = coreRadius + (outerRadiusZ - coreRadius) * 0.5;
+        const averageRadius = (midRadiusX + midRadiusZ) / 2;
+        const tangentialLength = Math.max((Math.abs(sweep) * averageRadius) / stepCount * 0.9, 0.26);
+
+        return (
+            <group
+                position={[baseX, floor.elevation, baseZ]}
+                onClick={(event) => {
+                    event.stopPropagation();
+                    setActiveFloor(stair.floorId);
+                    setSelectedElement({ id: stair.id, type: 'stair' });
+                }}
+            >
+                <CylinderShape
+                    args={[Math.max(coreRadius * 0.26, 0.08), Math.max(coreRadius * 0.32, 0.1), Math.abs(elevationDelta) + treadThickness * 1.5, 24]}
+                    position={[0, elevationDelta / 2, 0]}
+                    castShadow
+                    receiveShadow
+                >
+                    <meshStandardMaterial
+                        color="#d8dee8"
+                        roughness={0.45}
+                        metalness={0.15}
+                        transparent={layer?.opacity !== undefined ? layer.opacity < 1 : false}
+                        opacity={layer?.opacity ?? 1}
+                    />
+                </CylinderShape>
+
+                {Array.from({ length: stepCount }).map((_, index) => {
+                    const t = (index + 0.5) / stepCount;
+                    const angle = startAngle + sweep * t;
+                    const x = Math.cos(angle) * midRadiusX;
+                    const z = Math.sin(angle) * midRadiusZ;
+                    const tangentX = -outerRadiusX * Math.sin(angle);
+                    const tangentZ = outerRadiusZ * Math.cos(angle);
+                    const rotationY = Math.atan2(-tangentZ, tangentX);
+                    const y = risePerStep * (index + 1) - treadThickness / 2;
+
+                    return (
+                        <Box
+                            key={`${stair.id}-spiral-step-${index}`}
+                            args={[tangentialLength, treadThickness, radialSpan]}
+                            position={[x, y, z]}
+                            rotation={[0, rotationY, 0]}
+                            castShadow
+                            receiveShadow
+                        >
+                            <meshStandardMaterial
+                                color={stair.color || '#ff9f68'}
+                                roughness={0.52}
+                                metalness={0.04}
+                                transparent={layer?.opacity !== undefined ? layer.opacity < 1 : false}
+                                opacity={layer?.opacity ?? 1}
+                            />
+                        </Box>
+                    );
+                })}
+            </group>
+        );
+    }
+
     const climbsOnX = stair.direction === 'east' || stair.direction === 'west';
     const runLength = climbsOnX ? stair.width : stair.height;
     const crossLength = climbsOnX ? stair.height : stair.width;
     const treadDepth = Math.max(runLength / stepCount, 0.22);
     const risePerStep = elevationDelta / stepCount;
-    const baseX = stair.x + stair.width / 2;
-    const baseZ = stair.y + stair.height / 2;
 
     return (
         <group
