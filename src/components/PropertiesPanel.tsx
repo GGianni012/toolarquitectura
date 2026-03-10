@@ -457,6 +457,7 @@ export default function PropertiesPanel() {
                     { label: 'Rotation', value: `${Math.round(element.rotation || 0)}°` },
                     { label: 'Points', value: `${element.points?.length || 4}` },
                     { label: 'Walls', value: `${visibleWallsCount}/${edgeCount}` },
+                    { label: 'Floor', value: element.showFloor ? 'On' : 'Off' },
                     { label: 'Ceiling', value: element.showCeiling ? 'On' : 'Off' },
                     { label: 'Area', value: `${(roomMetrics ? roomMetrics.area : (element.width * element.height * PLAN_UNIT_IN_METERS * PLAN_UNIT_IN_METERS)).toFixed(2).replace(/\.?0+$/, '')}m²` }
                 ];
@@ -685,6 +686,13 @@ export default function PropertiesPanel() {
                                         </button>
                                     );
                                 })}
+                                <button
+                                    type="button"
+                                    className={`wall-toggle-btn ${element.showFloor ? 'active' : ''}`}
+                                    onClick={() => handleChange('showFloor', !(element.showFloor ?? false))}
+                                >
+                                    Floor
+                                </button>
                             </div>
                         </div>
                         <div className="property-row">

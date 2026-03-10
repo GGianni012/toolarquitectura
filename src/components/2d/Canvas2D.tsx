@@ -2331,6 +2331,7 @@ export default function Canvas2D() {
                     points: drawingSurface.points,
                     rotation: 0,
                     hiddenWallEdges: [],
+                    showFloor: false,
                     showCeiling: false,
                     wallHeight: 3,
                     name: `Room ${visibleRooms.length + 1}`,

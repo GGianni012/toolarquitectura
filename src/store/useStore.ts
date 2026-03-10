@@ -85,6 +85,7 @@ export interface Room extends PositionedElement {
     height: number;
     rotation?: number;
     points?: { x: number; y: number }[];
+    showFloor?: boolean;
     showWalls?: boolean;
     showCeiling?: boolean;
     hiddenWallEdges?: number[];
@@ -291,7 +292,7 @@ export const useStore = create<AppState>()(persist((set) => ({
     activeFloorId: initialFloorId,
 
     rooms: [
-        { id: '1', floorId: initialFloorId, x: 2, y: 2, width: 4, height: 3, rotation: 0, showWalls: true, showCeiling: false, hiddenWallEdges: [], name: 'Living Room', color: '#88ccff', wallHeight: 3 }
+        { id: '1', floorId: initialFloorId, x: 2, y: 2, width: 4, height: 3, rotation: 0, showFloor: false, showWalls: true, showCeiling: false, hiddenWallEdges: [], name: 'Living Room', color: '#88ccff', wallHeight: 3 }
     ],
     furniture: [
         { id: 'f1', floorId: initialFloorId, type: 'sofa', x: 3, y: 3, rotation: 0 }
@@ -381,6 +382,7 @@ export const useStore = create<AppState>()(persist((set) => ({
         rooms: [...state.rooms, {
             ...room,
             rotation: room.rotation ?? 0,
+            showFloor: room.showFloor ?? false,
             showWalls: room.showWalls ?? true,
             showCeiling: room.showCeiling ?? false,
             hiddenWallEdges: room.hiddenWallEdges ?? [],
@@ -393,6 +395,7 @@ export const useStore = create<AppState>()(persist((set) => ({
             ...r,
             ...data,
             rotation: data.rotation ?? r.rotation ?? 0,
+            showFloor: data.showFloor ?? r.showFloor ?? false,
             showWalls: data.showWalls ?? r.showWalls ?? true,
             showCeiling: data.showCeiling ?? r.showCeiling ?? false,
             hiddenWallEdges: data.hiddenWallEdges ?? r.hiddenWallEdges ?? []
@@ -496,6 +499,7 @@ export const useStore = create<AppState>()(persist((set) => ({
             ...(data.rooms || []).map((room) => ({
                 ...room,
                 rotation: room.rotation ?? 0,
+                showFloor: room.showFloor ?? false,
                 showWalls: room.showWalls ?? true,
                 showCeiling: room.showCeiling ?? false,
                 hiddenWallEdges: room.hiddenWallEdges ?? [],

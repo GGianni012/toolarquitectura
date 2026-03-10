@@ -80,6 +80,7 @@ function App() {
                     addRoom({
                         ...room,
                         floorId: activeFloorId,
+                        showFloor: room.showFloor ?? false,
                         points: room.points?.map((point: { x: number; y: number }) => ({ x: point.x + offset, y: point.y + offset })),
                         x: room.x + offset,
                         y: room.y + offset,

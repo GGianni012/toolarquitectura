@@ -372,6 +372,7 @@ function Room3D({ room, floor, openings = [] }: { room: Room; floor: Floor; open
     if (layer && !layer.visible) return null;
     const opacity = layer?.opacity ?? 1;
     const isTransparent = usesTransparentPass(opacity);
+    const showFloor = room.showFloor ?? false;
     const rotationRadians = -THREE.MathUtils.degToRad(room.rotation || 0);
     const roomHeight = room.wallHeight || floor.height || DEFAULT_LEVEL_HEIGHT;
     const floorTopY = floor.elevation + FLOOR_SURFACE_LIFT;
@@ -411,7 +412,7 @@ function Room3D({ room, floor, openings = [] }: { room: Room; floor: Floor; open
     if (polygonShape) {
         return (
             <group onClick={handleSelect} raycast={room.locked ? ignoreLockedRaycast : undefined}>
-                {isTransparent ? (
+                {showFloor && (isTransparent ? (
                     <mesh
                         position={[0, floorTopY, 0]}
                         rotation={[-Math.PI / 2, 0, 0]}
@@ -437,7 +438,7 @@ function Room3D({ room, floor, openings = [] }: { room: Room; floor: Floor; open
                             />
                         </mesh>
                     </group>
-                )}
+                ))}
                 {room.showCeiling && (
                     isTransparent ? (
                         <mesh
@@ -473,7 +474,7 @@ function Room3D({ room, floor, openings = [] }: { room: Room; floor: Floor; open
 
     return (
         <>
-            {(canUseOpenings ? floorPatches : [{ x: room.x, y: room.y, width: room.width, height: room.height }]).map((patch, index) => (
+            {showFloor && (canUseOpenings ? floorPatches : [{ x: room.x, y: room.y, width: room.width, height: room.height }]).map((patch, index) => (
                 <group
                     key={`${room.id}-patch-${index}`}
                     position={[patch.x + patch.width / 2, 0, patch.y + patch.height / 2]}
