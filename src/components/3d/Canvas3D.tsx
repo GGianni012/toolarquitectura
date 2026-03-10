@@ -9,6 +9,7 @@ import {
     getRectIntersection,
     getRoomBounds,
     getRoomCorners,
+    getRoomPolygon,
     getStairOpeningFloorId,
     getWallSegment,
     resolveDoorPlacement,
@@ -35,6 +36,7 @@ const ROOM_FLOOR_RENDER_ORDER = 8;
 const ROOM_CEILING_RENDER_ORDER = 9;
 const SURFACE_RENDER_ORDER = 12;
 const RULER_RENDER_ORDER = 16;
+const LEVEL_SURFACE_OFFSET = 0.028;
 
 function usesTransparentPass(opacity: number) {
     return opacity < 0.999;
@@ -55,6 +57,46 @@ function getBlendMaterialProps(opacity: number) {
         premultipliedAlpha: transparent,
         blending: THREE.NormalBlending
     };
+}
+
+function isPointInsidePolygon(point: { x: number; y: number }, polygon: Array<{ x: number; y: number }>) {
+    let inside = false;
+
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        const xi = polygon[i].x;
+        const yi = polygon[i].y;
+        const xj = polygon[j].x;
+        const yj = polygon[j].y;
+
+        const intersects = ((yi > point.y) !== (yj > point.y))
+            && (point.x < ((xj - xi) * (point.y - yi)) / ((yj - yi) || 0.0000001) + xi);
+
+        if (intersects) {
+            inside = !inside;
+        }
+    }
+
+    return inside;
+}
+
+function isPolygonInsidePolygon(inner: Array<{ x: number; y: number }>, outer: Array<{ x: number; y: number }>) {
+    return inner.every((point) => isPointInsidePolygon(point, outer));
+}
+
+function createShapePath(points: Array<{ x: number; y: number }>, reverse = false) {
+    const ordered = reverse ? [...points].reverse() : points;
+    const path = new THREE.Path();
+
+    ordered.forEach((point, index) => {
+        if (index === 0) {
+            path.moveTo(point.x, point.y);
+            return;
+        }
+        path.lineTo(point.x, point.y);
+    });
+
+    path.closePath();
+    return path;
 }
 
 type WallOpening = {
@@ -1101,7 +1143,7 @@ function Furniture3D({ item, floor }: { item: Furniture; floor: Floor }) {
     );
 }
 
-function Surface3D({ surface, floor }: { surface: Surface; floor: Floor }) {
+function Surface3D({ surface, floor, rooms }: { surface: Surface; floor: Floor; rooms: Room[] }) {
     const { setActiveFloor, setSelectedElement } = useStore();
     const depth = surface.depth || 0.1;
     const altitude = surface.altitude || 0;
@@ -1110,7 +1152,10 @@ function Surface3D({ surface, floor }: { surface: Surface; floor: Floor }) {
     const opacity = layer?.opacity ?? 1;
     const isTransparent = usesTransparentPass(opacity);
     const renderOrder = getFloorRenderBaseOrder(floor) + SURFACE_RENDER_ORDER;
-    const surfaceBaseY = floor.elevation + altitude + SURFACE_CLEARANCE;
+    const isLevelSurface = Math.abs(altitude) <= 0.001;
+    const surfaceBaseY = isLevelSurface
+        ? floor.elevation - LEVEL_SURFACE_OFFSET
+        : floor.elevation + altitude + SURFACE_CLEARANCE;
 
     const shape = useMemo(() => {
         if (!surface.points || surface.points.length < 3) return null;
@@ -1124,8 +1169,24 @@ function Surface3D({ surface, floor }: { surface: Surface; floor: Floor }) {
             nextShape.lineTo(point.x, point.y);
         });
 
+        const outerVectors = surface.points.map((point) => new THREE.Vector2(point.x, point.y));
+        const outerIsClockwise = THREE.ShapeUtils.isClockWise(outerVectors);
+        const candidateRooms = isLevelSurface
+            ? rooms.filter((room) => {
+                const polygon = getRoomPolygon(room);
+                return polygon.length >= 3 && isPolygonInsidePolygon(polygon, surface.points);
+            })
+            : [];
+
+        candidateRooms.forEach((room) => {
+            const roomPolygon = getRoomPolygon(room);
+            const roomVectors = roomPolygon.map((point) => new THREE.Vector2(point.x, point.y));
+            const roomIsClockwise = THREE.ShapeUtils.isClockWise(roomVectors);
+            nextShape.holes.push(createShapePath(roomPolygon, roomIsClockwise === outerIsClockwise));
+        });
+
         return nextShape;
-    }, [surface.points]);
+    }, [isLevelSurface, rooms, surface.points]);
 
     if (!shape) return null;
 
@@ -1158,7 +1219,7 @@ function Surface3D({ surface, floor }: { surface: Surface; floor: Floor }) {
                         {...getBlendMaterialProps(opacity)}
                     />
                 </mesh>
-            )}
+                )}
         </group>
     );
 }
@@ -1774,7 +1835,8 @@ export default function Canvas3D() {
 
                 {visibleSurfaces.map((surface) => {
                     const floor = floorMap.get(surface.floorId);
-                    return floor ? <Surface3D key={surface.id} surface={surface} floor={floor} /> : null;
+                    const surfaceRooms = visibleRooms.filter((room) => room.floorId === surface.floorId);
+                    return floor ? <Surface3D key={surface.id} surface={surface} floor={floor} rooms={surfaceRooms} /> : null;
                 })}
 
                 {visibleRulers.map((ruler) => {
