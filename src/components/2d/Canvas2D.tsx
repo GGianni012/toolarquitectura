@@ -1,4 +1,4 @@
-import { useStore, Room, Wall, Furniture, Door, Cylinder, Surface, Stair, FloorReference } from '../../store/useStore';
+import { useStore, Room, Wall, Furniture, Door, Cylinder, Surface, Stair, FloorReference, defaultLayerSettings } from '../../store/useStore';
 import { useDrag } from '@use-gesture/react';
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
@@ -500,7 +500,12 @@ function ReferenceLayer({
     reference: FloorReference;
     scale: number;
 }) {
-    const { updateFloor } = useStore();
+    const { updateFloor, floors } = useStore();
+    const floor = floors.find((f) => f.id === floorId);
+    const layerSettings = floor?.layerSettings || defaultLayerSettings;
+    const referenceLayer = layerSettings.reference;
+    const finalOpacity = (referenceLayer?.opacity ?? 1) * (reference.opacity ?? 1);
+    const isVisible = referenceLayer?.visible ?? true;
     const [naturalSize, setNaturalSize] = useState({
         width: reference.width || 0,
         height: reference.height || 0
@@ -535,14 +540,14 @@ function ReferenceLayer({
         enabled: !reference.locked
     });
 
-    return (
+    return isVisible ? (
         <div
             {...bind()}
             className={`reference-layer ${reference.locked ? 'locked' : 'unlocked'}`}
             style={{
                 left: reference.offsetX,
                 top: reference.offsetY,
-                opacity: reference.opacity,
+                opacity: finalOpacity,
                 width: Math.max(1, rotatedSize.width * (reference.scale || 1)),
                 height: Math.max(1, rotatedSize.height * (reference.scale || 1)),
                 pointerEvents: reference.locked ? 'none' : 'auto'
@@ -573,7 +578,7 @@ function ReferenceLayer({
                 }}
             />
         </div>
-    );
+    ) : null;
 }
 
 function WallElement({
@@ -589,7 +594,13 @@ function WallElement({
     setSnapGuides: (guides: SnapGuide[]) => void;
     isDrawing?: boolean;
 }) {
-    const { interactMode, updateWall, selectedElement, setSelectedElement } = useStore();
+    const { interactMode, updateWall, selectedElement, setSelectedElement, floors } = useStore();
+    const floorId = 'id' in wall ? wall.floorId : undefined;
+    const floor = floorId ? floors.find((f) => f.id === floorId) : null;
+    const layer = (floor?.layerSettings || defaultLayerSettings).walls;
+    const isLayerVisible = layer?.visible ?? true;
+    const layerOpacity = layer?.opacity ?? 1;
+    if ('id' in wall && floorId && !isLayerVisible) return null;
     const isFinished = !isDrawing && 'id' in wall;
     const wallObj = wall as Wall;
     const endX = isFinished ? wallObj.endX : (wall as any).currentX;
@@ -651,7 +662,7 @@ function WallElement({
                 strokeLinecap="round"
                 strokeDasharray={isDrawing ? '10 5' : 'none'}
                 className="wall-2d"
-                style={{ pointerEvents: isDrawing ? 'none' : 'stroke' }}
+                style={{ pointerEvents: isDrawing ? 'none' : 'stroke', opacity: layerOpacity }}
             />
             {showLabel && (
                 <text
@@ -723,8 +734,11 @@ function RoomElement({
     distanceCandidates: Array<{ id: string; rect: Rect2D }>;
     setDistanceGuides: (guides: DistanceGuide[]) => void;
 }) {
-    const { updateRoom, interactMode, selectedElement, setSelectedElement } = useStore();
+    const { updateRoom, interactMode, selectedElement, setSelectedElement, floors } = useStore();
     const isSelected = selectedElement?.id === room.id;
+    const floor = floors.find((f) => f.id === room.floorId);
+    const layer = (floor?.layerSettings || defaultLayerSettings).rooms;
+    if (layer && !layer.visible) return null;
 
     const bind = useDrag(({ movement: [mx, my], first, memo }) => {
         if (interactMode !== 'select' || room.locked) return memo;
@@ -832,6 +846,7 @@ function RoomElement({
                 boxShadow: isSelected ? '0 0 0 3px #fca5a5' : undefined,
                 transform: `rotate(${room.rotation || 0}deg)`,
                 transformOrigin: 'center center',
+                opacity: layer?.opacity ?? 1,
                 ...getRectRoomWallStyles(room)
             }}
         >
@@ -873,11 +888,14 @@ function FurnitureElement({
     distanceCandidates: Array<{ id: string; rect: Rect2D }>;
     setDistanceGuides: (guides: DistanceGuide[]) => void;
 }) {
-    const { updateFurniture, interactMode, selectedElement, setSelectedElement } = useStore();
+    const { updateFurniture, interactMode, selectedElement, setSelectedElement, floors } = useStore();
     const isSelected = selectedElement?.id === item.id;
     const preset = getFurniturePreset(item.type);
     const width = item.width ?? preset.width;
     const depth = item.depth ?? preset.depth;
+    const floor = floors.find((f) => f.id === item.floorId);
+    const layer = (floor?.layerSettings || defaultLayerSettings).furniture;
+    if (layer && !layer.visible) return null;
 
     const bind = useDrag(({ movement: [mx, my], first, memo }) => {
         if (interactMode !== 'select' || item.locked) return memo;
@@ -1164,7 +1182,8 @@ function FurnitureElement({
                 transform: `rotate(${item.rotation}deg)`,
                 transformOrigin: 'center center',
                 backgroundColor: item.color || preset.color,
-                boxShadow: isSelected ? '0 0 0 3px #fca5a5' : undefined
+                boxShadow: isSelected ? '0 0 0 3px #fca5a5' : undefined,
+                opacity: layer?.opacity ?? 1
             }}
         >
             {renderTopView()}
@@ -1189,8 +1208,11 @@ function CylinderElement({
     distanceCandidates: Array<{ id: string; rect: Rect2D }>;
     setDistanceGuides: (guides: DistanceGuide[]) => void;
 }) {
-    const { updateCylinder, interactMode, selectedElement, setSelectedElement } = useStore();
+    const { updateCylinder, interactMode, selectedElement, setSelectedElement, floors } = useStore();
     const isSelected = selectedElement?.id === cylinder.id;
+    const floor = floors.find((f) => f.id === cylinder.floorId);
+    const layer = (floor?.layerSettings || defaultLayerSettings).cylinders;
+    if (layer && !layer.visible) return null;
 
     const bind = useDrag(({ movement: [mx, my], first, memo }) => {
         if (interactMode !== 'select' || cylinder.locked) return memo;
@@ -1256,7 +1278,8 @@ function CylinderElement({
                 height: cylinder.radius * 2 * GRID_SIZE,
                 borderRadius: '50%',
                 backgroundColor: cylinder.color || '#b8ffb8',
-                boxShadow: isSelected ? '0 0 0 3px #fca5a5' : undefined
+                boxShadow: isSelected ? '0 0 0 3px #fca5a5' : undefined,
+                opacity: layer?.opacity ?? 1
             }}
         >
             {showLabel && (
@@ -1277,9 +1300,12 @@ function CylinderElement({
 }
 
 function DoorElement({ door, scale }: { door: Door; scale: number }) {
-    const { rooms, walls, updateDoor, interactMode, selectedElement, setSelectedElement } = useStore();
+    const { rooms, walls, floors, updateDoor, interactMode, selectedElement, setSelectedElement } = useStore();
     const placement = resolveDoorPlacement(door, rooms, walls);
     if (!placement) return null;
+    const floor = floors.find((f) => f.id === door.floorId);
+    const layer = (floor?.layerSettings || defaultLayerSettings).doors;
+    if (layer && !layer.visible) return null;
 
     const bind = useDrag(({ movement: [mx, my], first, memo }) => {
         if (interactMode !== 'select' || door.locked) return memo;
@@ -1326,7 +1352,8 @@ function DoorElement({ door, scale }: { door: Door; scale: number }) {
                 zIndex: 3,
                 boxShadow: '0 2px 4px rgba(0,0,0,0.5)',
                 borderRadius: 999,
-                border: isSelected ? '2px solid white' : 'none'
+                border: isSelected ? '2px solid white' : 'none',
+                opacity: layer?.opacity ?? 1
             }}
         />
     );
@@ -1346,6 +1373,9 @@ function StairElement({
     const { floors, rooms, updateStair, interactMode, selectedElement, setSelectedElement } = useStore();
     const isSelected = selectedElement?.id === stair.id;
     const targetFloor = floors.find((floor) => floor.id === stair.targetFloorId);
+    const floor = floors.find((f) => f.id === stair.floorId);
+    const layer = (floor?.layerSettings || defaultLayerSettings).stairs;
+    if (layer && !layer.visible) return null;
 
     const bind = useDrag(({ movement: [mx, my], first, memo }) => {
         if (interactMode !== 'select' || stair.locked) return memo;
@@ -1404,7 +1434,8 @@ function StairElement({
                 width: stair.width * GRID_SIZE,
                 height: stair.height * GRID_SIZE,
                 backgroundColor: stair.color || '#ffd166',
-                boxShadow: isSelected ? '0 0 0 3px #fca5a5' : undefined
+                boxShadow: isSelected ? '0 0 0 3px #fca5a5' : undefined,
+                opacity: layer?.opacity ?? 1
             }}
         >
             {showArrow && (
@@ -1428,8 +1459,11 @@ function StairElement({
 }
 
 function SurfaceElement({ surface, scale }: { surface: Surface; scale: number }) {
-    const { interactMode, selectedElement, setSelectedElement, updateSurface } = useStore();
+    const { interactMode, selectedElement, setSelectedElement, updateSurface, floors } = useStore();
     const isSelected = selectedElement?.id === surface.id;
+    const floor = floors.find((f) => f.id === surface.floorId);
+    const layer = (floor?.layerSettings || defaultLayerSettings).surfaces;
+    if (layer && !layer.visible) return null;
 
     const bind = useDrag(({ movement: [mx, my], first, memo }) => {
         if (interactMode !== 'select' || surface.locked) return memo;
@@ -1464,6 +1498,7 @@ function SurfaceElement({ surface, scale }: { surface: Surface; scale: number })
                 fill={surface.color || 'rgba(200, 200, 200, 0.5)'}
                 stroke={isSelected ? '#fca5a5' : '#666'}
                 strokeWidth={isSelected ? 3 / scale : 1 / scale}
+                opacity={layer?.opacity ?? 1}
                 style={{ cursor: interactMode === 'select' ? (surface.locked ? 'pointer' : 'grab') : 'default', pointerEvents: interactMode === 'select' ? 'all' : 'none' }}
             />
             {isSelected && surface.points.map((point, index) => {

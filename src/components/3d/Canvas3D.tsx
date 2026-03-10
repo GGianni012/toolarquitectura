@@ -1,4 +1,4 @@
-import { useStore, Room, Furniture, Wall, Cylinder, Door, Surface, Floor, Stair } from '../../store/useStore';
+import { useStore, Room, Furniture, Wall, Cylinder, Door, Surface, Floor, Stair, defaultLayerSettings } from '../../store/useStore';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Environment, ContactShadows, Box, Plane, Cylinder as CylinderShape } from '@react-three/drei';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -80,7 +80,8 @@ function WallWithOpenings({
     height,
     thickness,
     color,
-    openings = []
+    openings = [],
+    opacity = 1
 }: {
     start: { x: number; y: number };
     angle: number;
@@ -90,6 +91,7 @@ function WallWithOpenings({
     thickness: number;
     color: string;
     openings?: WallOpening[];
+    opacity?: number;
 }) {
     const normalizedOpenings = useMemo(
         () => normalizeWallOpenings(openings, length, height),
@@ -147,7 +149,7 @@ function WallWithOpenings({
         <group position={[start.x, baseElevation, start.y]} rotation={[0, -angle, 0]}>
             {segments.map((segment) => (
                 <Box key={segment.key} args={segment.args} position={segment.position} castShadow receiveShadow>
-                    <meshStandardMaterial color={color} />
+                    <meshStandardMaterial color={color} transparent={opacity < 0.999} opacity={opacity} />
                 </Box>
             ))}
         </group>
@@ -280,6 +282,8 @@ function buildSceneBounds(
 
 function Room3D({ room, floor, openings = [] }: { room: Room; floor: Floor; openings?: Rect2D[] }) {
     const { setActiveFloor, setSelectedElement } = useStore();
+    const layer = (floor.layerSettings || defaultLayerSettings).rooms;
+    if (layer && !layer.visible) return null;
     const rotationRadians = -THREE.MathUtils.degToRad(room.rotation || 0);
     const floorPatches = useMemo(
         () => subtractRectHolesFromRect({ x: room.x, y: room.y, width: room.width, height: room.height }, openings),
@@ -312,7 +316,13 @@ function Room3D({ room, floor, openings = [] }: { room: Room; floor: Floor; open
                 <group position={[0, floor.elevation + 0.002, 0]} rotation={[Math.PI / 2, 0, 0]}>
                     <mesh receiveShadow castShadow>
                         <extrudeGeometry args={[polygonShape, { depth: FLOOR_THICKNESS, bevelEnabled: false }]} />
-                        <meshStandardMaterial color={room.color || '#dddddd'} roughness={0.85} side={THREE.DoubleSide} />
+                        <meshStandardMaterial
+                            color={room.color || '#dddddd'}
+                            roughness={0.85}
+                            side={THREE.DoubleSide}
+                            transparent={true}
+                            opacity={layer?.opacity ?? 1}
+                        />
                     </mesh>
                 </group>
             </group>
@@ -328,9 +338,14 @@ function Room3D({ room, floor, openings = [] }: { room: Room; floor: Floor; open
                     rotation={[0, canUseOpenings ? 0 : rotationRadians, 0]}
                     onClick={handleSelect}
                 >
-                    <Box args={[patch.width, FLOOR_THICKNESS, patch.height]} position={[0, -FLOOR_THICKNESS / 2, 0]} castShadow receiveShadow>
-                        <meshStandardMaterial color={room.color || '#dddddd'} roughness={0.85} />
-                    </Box>
+            <Box args={[patch.width, FLOOR_THICKNESS, patch.height]} position={[0, -FLOOR_THICKNESS / 2, 0]} castShadow receiveShadow>
+                <meshStandardMaterial
+                    color={room.color || '#dddddd'}
+                    roughness={0.85}
+                    transparent={true}
+                    opacity={layer?.opacity ?? 1}
+                />
+            </Box>
                 </group>
             ))}
         </>
@@ -347,6 +362,8 @@ function RoomWall3D({
     doorOpenings: WallOpening[];
 }) {
     const { setActiveFloor, setSelectedElement } = useStore();
+    const layer = (floor.layerSettings || defaultLayerSettings).walls;
+    if (layer && !layer.visible) return null;
     if (!segment.visible) return null;
 
     return (
@@ -368,6 +385,7 @@ function RoomWall3D({
                 height={segment.height}
                 thickness={WALL_THICKNESS}
                 color={ROOM_WALL_COLOR}
+                opacity={layer?.opacity ?? 1}
                 openings={doorOpenings}
             />
         </group>
@@ -386,6 +404,8 @@ function Wall3D({
     const { setActiveFloor, setSelectedElement } = useStore();
     const segment = getWallSegment(wall);
     const height = wall.wallHeight || floor.height || DEFAULT_LEVEL_HEIGHT;
+    const layer = (floor.layerSettings || defaultLayerSettings).walls;
+    if (layer && !layer.visible) return null;
 
     return (
         <group
@@ -403,6 +423,7 @@ function Wall3D({
                 height={height}
                 thickness={wall.thickness || WALL_THICKNESS}
                 color={wall.color || '#f0f0f0'}
+                opacity={layer?.opacity ?? 1}
                 openings={doorOpenings}
             />
         </group>
@@ -412,6 +433,8 @@ function Wall3D({
 function Door3D({ door, placement, floor, thickness }: { door: Door; placement: FittedDoorPlacement; floor: Floor; thickness?: number }) {
     const { setActiveFloor, setSelectedElement } = useStore();
     const doorLeafThickness = Math.min(thickness || WALL_THICKNESS, 0.08);
+    const layer = (floor.layerSettings || defaultLayerSettings).doors;
+    if (layer && !layer.visible) return null;
 
     return (
         <group
@@ -424,7 +447,13 @@ function Door3D({ door, placement, floor, thickness }: { door: Door; placement: 
             }}
         >
             <Box args={[placement.width, placement.doorHeight, doorLeafThickness]} position={[0, placement.doorHeight / 2, 0]} castShadow>
-                <meshStandardMaterial color={door.color || '#c78d54'} metalness={0.05} roughness={0.45} />
+                <meshStandardMaterial
+                    color={door.color || '#c78d54'}
+                    metalness={0.05}
+                    roughness={0.45}
+                    transparent={layer?.opacity !== undefined ? layer.opacity < 1 : false}
+                    opacity={layer?.opacity ?? 1}
+                />
             </Box>
         </group>
     );
@@ -433,6 +462,8 @@ function Door3D({ door, placement, floor, thickness }: { door: Door; placement: 
 function Cylinder3D({ cylinder, floor }: { cylinder: Cylinder; floor: Floor }) {
     const { setActiveFloor, setSelectedElement } = useStore();
     const height = cylinder.wallHeight || floor.height || DEFAULT_LEVEL_HEIGHT;
+    const layer = (floor.layerSettings || defaultLayerSettings).cylinders;
+    if (layer && !layer.visible) return null;
     return (
         <group
             position={[cylinder.x, floor.elevation + height / 2, cylinder.y]}
@@ -443,7 +474,11 @@ function Cylinder3D({ cylinder, floor }: { cylinder: Cylinder; floor: Floor }) {
             }}
         >
             <CylinderShape args={[cylinder.radius, cylinder.radius, height, 32]} castShadow receiveShadow>
-                <meshStandardMaterial color={cylinder.color || '#f0f0f0'} />
+                <meshStandardMaterial
+                    color={cylinder.color || '#f0f0f0'}
+                    transparent={layer?.opacity !== undefined ? layer.opacity < 1 : false}
+                    opacity={layer?.opacity ?? 1}
+                />
             </CylinderShape>
         </group>
     );
@@ -468,9 +503,30 @@ function Furniture3D({ item, floor }: { item: Furniture; floor: Floor }) {
     const woodColor = '#8f6749';
     const paleWood = '#c9a283';
     const darkGlass = '#2d343e';
+    const layer = (floor.layerSettings || defaultLayerSettings).furniture;
+    if (layer && !layer.visible) return null;
+    const opacity = layer?.opacity ?? 1;
+    const groupRef = useRef<THREE.Group>(null);
+
+    useEffect(() => {
+        const group = groupRef.current;
+        if (!group) return;
+        group.traverse((obj) => {
+            // @ts-ignore
+            const material = obj.material as THREE.Material | undefined;
+            if (material && 'opacity' in material) {
+                // @ts-ignore
+                material.opacity = opacity;
+                // @ts-ignore
+                material.transparent = opacity < 1;
+                material.needsUpdate = true;
+            }
+        });
+    }, [opacity]);
 
     return (
         <group
+            ref={groupRef}
             position={[item.x + width / 2, floor.elevation + height / 2 + altitude, item.y + depth / 2]}
             rotation={[0, rotationY, 0]}
             onClick={(event) => {
@@ -482,16 +538,16 @@ function Furniture3D({ item, floor }: { item: Furniture; floor: Floor }) {
             {item.type === 'sofa' && (
                 <>
                     <Box args={[width, height * 0.42, depth]} position={[0, -height * 0.08, 0]} castShadow receiveShadow>
-                        <meshStandardMaterial color={color} roughness={0.68} />
+                        <meshStandardMaterial color={color} roughness={0.68} transparent={opacity < 1} opacity={opacity} />
                     </Box>
                     <Box args={[width, height * 0.28, depth * 0.28]} position={[0, height * 0.14, depth * 0.18]} castShadow receiveShadow>
-                        <meshStandardMaterial color={softColor} roughness={0.6} />
+                        <meshStandardMaterial color={softColor} roughness={0.6} transparent={opacity < 1} opacity={opacity} />
                     </Box>
                     <Box args={[width * 0.16, height * 0.26, depth * 0.72]} position={[-width * 0.42, height * 0.02, 0]} castShadow receiveShadow>
-                        <meshStandardMaterial color={darkColor} roughness={0.65} />
+                        <meshStandardMaterial color={darkColor} roughness={0.65} transparent={opacity < 1} opacity={opacity} />
                     </Box>
                     <Box args={[width * 0.16, height * 0.26, depth * 0.72]} position={[width * 0.42, height * 0.02, 0]} castShadow receiveShadow>
-                        <meshStandardMaterial color={darkColor} roughness={0.65} />
+                        <meshStandardMaterial color={darkColor} roughness={0.65} transparent={opacity < 1} opacity={opacity} />
                     </Box>
                 </>
             )}
@@ -866,6 +922,8 @@ function Surface3D({ surface, floor }: { surface: Surface; floor: Floor }) {
     const { setActiveFloor, setSelectedElement } = useStore();
     const depth = surface.depth || 0.1;
     const altitude = surface.altitude || 0;
+    const layer = (floor.layerSettings || defaultLayerSettings).surfaces;
+    if (layer && !layer.visible) return null;
 
     const shape = useMemo(() => {
         if (!surface.points || surface.points.length < 3) return null;
@@ -896,7 +954,12 @@ function Surface3D({ surface, floor }: { surface: Surface; floor: Floor }) {
         >
             <mesh receiveShadow castShadow>
                 <extrudeGeometry args={[shape, { depth, bevelEnabled: false }]} />
-                <meshStandardMaterial color={surface.color || '#cccccc'} side={THREE.DoubleSide} />
+                <meshStandardMaterial
+                    color={surface.color || '#cccccc'}
+                    side={THREE.DoubleSide}
+                    transparent={layer?.opacity !== undefined ? layer.opacity < 1 : false}
+                    opacity={layer?.opacity ?? 1}
+                />
             </mesh>
         </group>
     );
@@ -905,6 +968,8 @@ function Surface3D({ surface, floor }: { surface: Surface; floor: Floor }) {
 function Stair3D({ stair, floor, targetFloor }: { stair: Stair; floor: Floor; targetFloor: Floor }) {
     const { setActiveFloor, setSelectedElement } = useStore();
     const elevationDelta = targetFloor.elevation - floor.elevation;
+    const layer = (floor.layerSettings || defaultLayerSettings).stairs;
+    if (layer && !layer.visible) return null;
 
     if (Math.abs(elevationDelta) < 0.1) {
         return null;
@@ -945,7 +1010,12 @@ function Stair3D({ stair, floor, targetFloor }: { stair: Stair; floor: Floor; ta
 
                 return (
                     <Box key={index} args={args} position={position} castShadow receiveShadow>
-                        <meshStandardMaterial color={stair.color || '#ffd166'} roughness={0.55} />
+                        <meshStandardMaterial
+                            color={stair.color || '#ffd166'}
+                            roughness={0.55}
+                            transparent={layer?.opacity !== undefined ? layer.opacity < 1 : false}
+                            opacity={layer?.opacity ?? 1}
+                        />
                     </Box>
                 );
             })}

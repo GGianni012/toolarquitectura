@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { useStore, InteractMode } from '../store/useStore';
+import { useStore, InteractMode, defaultLayerSettings } from '../store/useStore';
 import { Square, Circle, DoorOpen, MousePointer2, PenTool, Hexagon, Layers3, Plus, Eye, EyeOff, Upload, ArrowUpDown } from 'lucide-react';
 import { importReferenceFile } from '../utils/referenceImport';
 import { autoTraceReference } from '../utils/autoTraceReference';
@@ -42,6 +42,7 @@ export default function Sidebar() {
         addStair,
         addFloor,
         updateFloor,
+        updateLayerSettings,
         applyAutoTraceResult,
         rooms,
         walls,
@@ -151,6 +152,7 @@ export default function Sidebar() {
     ];
     const livingFurniture = FURNITURE_PRESETS.filter((preset) => preset.category === 'living');
     const gastronomyFurniture = FURNITURE_PRESETS.filter((preset) => preset.category === 'gastronomy');
+    const layerSettings = activeFloor?.layerSettings || defaultLayerSettings;
 
     return (
         <aside className="sidebar glass-panel">
@@ -255,6 +257,45 @@ export default function Sidebar() {
                             <span>{tool.name}</span>
                         </div>
                     ))}
+                </div>
+            </div>
+
+            <div className="tool-section">
+                <h3>Layers</h3>
+                <div className="layer-grid">
+                    {layerSettings && ([
+                        { key: 'rooms', label: 'Rooms' },
+                        { key: 'walls', label: 'Walls' },
+                        { key: 'doors', label: 'Doors' },
+                        { key: 'furniture', label: 'Furniture' },
+                        { key: 'cylinders', label: 'Cylinders' },
+                        { key: 'surfaces', label: 'Surfaces' },
+                        { key: 'stairs', label: 'Stairs' },
+                        { key: 'reference', label: 'Reference' }
+                    ] as const).map((layer) => {
+                        const state = layerSettings[layer.key];
+                        return (
+                            <div key={layer.key} className="layer-row">
+                                <button
+                                    className={`icon-toggle ${state.visible ? 'active' : ''}`}
+                                    onClick={() => updateLayerSettings(activeFloorId, layer.key, { visible: !state.visible })}
+                                    title={state.visible ? 'Hide layer' : 'Show layer'}
+                                >
+                                    {state.visible ? <Eye size={14} /> : <EyeOff size={14} />}
+                                </button>
+                                <div className="layer-label">{layer.label}</div>
+                                <input
+                                    type="range"
+                                    min="0.05"
+                                    max="1"
+                                    step="0.01"
+                                    value={state.opacity}
+                                    onChange={(e) => updateLayerSettings(activeFloorId, layer.key, { opacity: parseFloat(e.target.value) })}
+                                />
+                                <div className="layer-value">{Math.round(state.opacity * 100)}%</div>
+                            </div>
+                        );
+                    })}
                 </div>
             </div>
 

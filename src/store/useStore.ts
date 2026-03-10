@@ -46,6 +46,7 @@ export interface Floor {
     visible: boolean;
     openSide: OpenSide;
     reference?: FloorReference | null;
+    layerSettings?: LayerSettings;
 }
 
 export interface FloorReference {
@@ -64,6 +65,10 @@ export interface FloorReference {
     flipX?: boolean;
     flipY?: boolean;
 }
+
+export type LayerKey = 'rooms' | 'walls' | 'doors' | 'furniture' | 'cylinders' | 'surfaces' | 'stairs' | 'reference';
+
+export type LayerSettings = Record<LayerKey, { visible: boolean; opacity: number }>;
 
 export interface PositionedElement extends BaseElement {
     floorId: string;
@@ -176,6 +181,7 @@ interface AppState {
 
     addFloor: (floor?: Partial<Omit<Floor, 'id'>>) => void;
     updateFloor: (id: string, data: Partial<Floor>) => void;
+    updateLayerSettings: (floorId: string, layer: LayerKey, data: Partial<{ visible: boolean; opacity: number }>) => void;
 
     addRoom: (room: Omit<Room, 'id' | 'floorId'> & { floorId?: string }) => void;
     updateRoom: (id: string, data: Partial<Room>) => void;
@@ -213,8 +219,20 @@ interface AppState {
 const generateId = () => Math.random().toString(36).substring(2, 9);
 const initialFloorId = 'floor-1';
 const MAX_HISTORY_STEPS = 120;
+
+export const defaultLayerSettings: LayerSettings = {
+    rooms: { visible: true, opacity: 1 },
+    walls: { visible: true, opacity: 1 },
+    doors: { visible: true, opacity: 1 },
+    furniture: { visible: true, opacity: 1 },
+    cylinders: { visible: true, opacity: 1 },
+    surfaces: { visible: true, opacity: 1 },
+    stairs: { visible: true, opacity: 1 },
+    reference: { visible: true, opacity: 1 }
+};
+
 const initialFloors: Floor[] = [
-    { id: initialFloorId, name: 'Ground Floor', elevation: 0, height: 3.2, visible: true, openSide: 'south', reference: null }
+    { id: initialFloorId, name: 'Ground Floor', elevation: 0, height: 3.2, visible: true, openSide: 'south', reference: null, layerSettings: defaultLayerSettings }
 ];
 
 function createHistorySnapshot(state: Pick<AppState, 'floors' | 'activeFloorId' | 'rooms' | 'furniture' | 'walls' | 'doors' | 'cylinders' | 'surfaces' | 'stairs'>): HistorySnapshot {
@@ -303,7 +321,8 @@ export const useStore = create<AppState>()(persist((set) => ({
             height: floor?.height ?? highestFloor.height,
             visible: floor?.visible ?? true,
             openSide: floor?.openSide ?? highestFloor.openSide ?? 'south',
-            reference: floor?.reference ?? null
+            reference: floor?.reference ?? null,
+            layerSettings: floor?.layerSettings ?? defaultLayerSettings
         };
 
         return withHistory(state, {
@@ -314,6 +333,22 @@ export const useStore = create<AppState>()(persist((set) => ({
     }),
     updateFloor: (id, data) => set((state) => withHistory(state, {
         floors: state.floors.map((floor) => floor.id === id ? { ...floor, ...data } : floor)
+    })),
+    updateLayerSettings: (id, layer, data) => set((state) => withHistory(state, {
+        floors: state.floors.map((floor) => {
+            if (floor.id !== id) return floor;
+            const current = floor.layerSettings || defaultLayerSettings;
+            return {
+                ...floor,
+                layerSettings: {
+                    ...current,
+                    [layer]: {
+                        ...current[layer],
+                        ...data
+                    }
+                }
+            };
+        })
     })),
 
     addRoom: (room) => set((state) => withHistory(state, {
