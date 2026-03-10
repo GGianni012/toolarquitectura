@@ -112,6 +112,63 @@ function uniqueSorted(values: number[]) {
     return Array.from(new Set(values.map((value) => Number(keyForNumber(value))))).sort((a, b) => a - b);
 }
 
+function getCanonicalLineData(start: Point2D, end: Point2D) {
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const length = Math.hypot(dx, dy);
+
+    if (length <= EPSILON) {
+        return null;
+    }
+
+    let directionX = dx / length;
+    let directionY = dy / length;
+    if (directionX < -EPSILON || (Math.abs(directionX) <= EPSILON && directionY < 0)) {
+        directionX *= -1;
+        directionY *= -1;
+    }
+
+    const normalX = -directionY;
+    const normalY = directionX;
+    const offset = start.x * normalX + start.y * normalY;
+    const startProjection = start.x * directionX + start.y * directionY;
+    const endProjection = end.x * directionX + end.y * directionY;
+
+    return {
+        directionX,
+        directionY,
+        normalX,
+        normalY,
+        offset,
+        spanStart: Math.min(startProjection, endProjection),
+        spanEnd: Math.max(startProjection, endProjection)
+    };
+}
+
+function getCollinearSegmentKey(floorId: string, start: Point2D, end: Point2D) {
+    const line = getCanonicalLineData(start, end);
+    if (!line) return null;
+
+    return {
+        key: `${floorId}:${keyForNumber(line.directionX)}:${keyForNumber(line.directionY)}:${keyForNumber(line.offset)}`,
+        line
+    };
+}
+
+function pointOnCanonicalLine(
+    projection: number,
+    directionX: number,
+    directionY: number,
+    normalX: number,
+    normalY: number,
+    offset: number
+): Point2D {
+    return {
+        x: directionX * projection + normalX * offset,
+        y: directionY * projection + normalY * offset
+    };
+}
+
 function getSegmentOrientation(start: Point2D, end: Point2D): SegmentOrientation {
     const dx = end.x - start.x;
     const dy = end.y - start.y;
@@ -622,7 +679,63 @@ export function buildRoomWallSegments(rooms: Room[], floors: Floor[]) {
         });
     });
 
-    const segments: RoomWallSegment[] = [...angledSegments];
+    const mergedAngledSegments = Array.from((() => {
+        const groupedSegments = new Map<string, Array<{ segment: RoomWallSegment; line: NonNullable<ReturnType<typeof getCanonicalLineData>> }>>();
+
+        angledSegments.forEach((segment) => {
+            const keyed = getCollinearSegmentKey(segment.floorId, segment.start, segment.end);
+            if (!keyed) return;
+            const bucket = groupedSegments.get(keyed.key) || [];
+            bucket.push({ segment, line: keyed.line });
+            groupedSegments.set(keyed.key, bucket);
+        });
+
+        const nextSegments: RoomWallSegment[] = [];
+
+        groupedSegments.forEach((entries, key) => {
+            if (entries.length === 1) {
+                nextSegments.push(entries[0].segment);
+                return;
+            }
+
+            const points = uniqueSorted(entries.flatMap(({ line }) => [line.spanStart, line.spanEnd]));
+            if (points.length < 2) {
+                nextSegments.push(...entries.map(({ segment }) => segment));
+                return;
+            }
+
+            for (let index = 0; index < points.length - 1; index += 1) {
+                const spanStart = points[index];
+                const spanEnd = points[index + 1];
+                if (spanEnd - spanStart <= EPSILON) continue;
+
+                const midpoint = (spanStart + spanEnd) / 2;
+                const contributors = entries.filter(({ line }) => midpoint >= line.spanStart - EPSILON && midpoint <= line.spanEnd + EPSILON);
+                if (contributors.length === 0) continue;
+
+                const line = contributors[0].line;
+                const start = pointOnCanonicalLine(spanStart, line.directionX, line.directionY, line.normalX, line.normalY, line.offset);
+                const end = pointOnCanonicalLine(spanEnd, line.directionX, line.directionY, line.normalX, line.normalY, line.offset);
+
+                nextSegments.push({
+                    id: `${key}:${keyForNumber(spanStart)}:${keyForNumber(spanEnd)}`,
+                    floorId: contributors[0].segment.floorId,
+                    start,
+                    end,
+                    length: Math.hypot(end.x - start.x, end.y - start.y),
+                    angle: Math.atan2(end.y - start.y, end.x - start.x),
+                    orientation: getSegmentOrientation(start, end),
+                    height: Math.max(...contributors.map(({ segment }) => segment.height)),
+                    contributors: contributors.flatMap(({ segment }) => segment.contributors),
+                    visible: contributors.some(({ segment }) => segment.visible)
+                });
+            }
+        });
+
+        return nextSegments;
+    })());
+
+    const segments: RoomWallSegment[] = [...mergedAngledSegments];
 
     groupedEdges.forEach((edges) => {
         if (edges.length === 0) return;
@@ -680,20 +793,13 @@ export function subtractWallOverlapsFromRoomSegments(roomSegments: RoomWallSegme
 
     walls.forEach((wall) => {
         const segment = getWallSegment(wall);
-        if (segment.orientation === 'angled') return;
+        const keyed = getCollinearSegmentKey(segment.floorId, segment.start, segment.end);
+        if (!keyed) return;
 
-        const axis = segment.orientation === 'horizontal' ? segment.start.y : segment.start.x;
-        const spanStart = segment.orientation === 'horizontal'
-            ? Math.min(segment.start.x, segment.end.x)
-            : Math.min(segment.start.y, segment.end.y);
-        const spanEnd = segment.orientation === 'horizontal'
-            ? Math.max(segment.start.x, segment.end.x)
-            : Math.max(segment.start.y, segment.end.y);
-        const key = `${segment.floorId}:${segment.orientation}:${keyForNumber(axis)}`;
-        const intervals = wallCoverage.get(key) || [];
+        const intervals = wallCoverage.get(keyed.key) || [];
 
-        intervals.push({ start: spanStart, end: spanEnd });
-        wallCoverage.set(key, intervals);
+        intervals.push({ start: keyed.line.spanStart, end: keyed.line.spanEnd });
+        wallCoverage.set(keyed.key, intervals);
     });
 
     wallCoverage.forEach((intervals, key) => {
@@ -715,19 +821,11 @@ export function subtractWallOverlapsFromRoomSegments(roomSegments: RoomWallSegme
     });
 
     return roomSegments.flatMap((segment) => {
-        if (segment.orientation === 'angled') {
-            return [segment];
-        }
-
-        const axis = segment.orientation === 'horizontal' ? segment.start.y : segment.start.x;
-        const spanStart = segment.orientation === 'horizontal'
-            ? Math.min(segment.start.x, segment.end.x)
-            : Math.min(segment.start.y, segment.end.y);
-        const spanEnd = segment.orientation === 'horizontal'
-            ? Math.max(segment.start.x, segment.end.x)
-            : Math.max(segment.start.y, segment.end.y);
-        const key = `${segment.floorId}:${segment.orientation}:${keyForNumber(axis)}`;
-        const overlaps = wallCoverage.get(key);
+        const keyed = getCollinearSegmentKey(segment.floorId, segment.start, segment.end);
+        if (!keyed) return [segment];
+        const overlaps = wallCoverage.get(keyed.key);
+        const spanStart = keyed.line.spanStart;
+        const spanEnd = keyed.line.spanEnd;
 
         if (!overlaps || overlaps.length === 0) {
             return [segment];
@@ -742,12 +840,22 @@ export function subtractWallOverlapsFromRoomSegments(roomSegments: RoomWallSegme
             if (clippedEnd - clippedStart <= EPSILON) return;
 
             if (clippedStart - cursor > EPSILON) {
-                const start = segment.orientation === 'horizontal'
-                    ? { x: cursor, y: axis }
-                    : { x: axis, y: cursor };
-                const end = segment.orientation === 'horizontal'
-                    ? { x: clippedStart, y: axis }
-                    : { x: axis, y: clippedStart };
+                const start = pointOnCanonicalLine(
+                    cursor,
+                    keyed.line.directionX,
+                    keyed.line.directionY,
+                    keyed.line.normalX,
+                    keyed.line.normalY,
+                    keyed.line.offset
+                );
+                const end = pointOnCanonicalLine(
+                    clippedStart,
+                    keyed.line.directionX,
+                    keyed.line.directionY,
+                    keyed.line.normalX,
+                    keyed.line.normalY,
+                    keyed.line.offset
+                );
 
                 pieces.push({
                     ...segment,
@@ -763,12 +871,22 @@ export function subtractWallOverlapsFromRoomSegments(roomSegments: RoomWallSegme
         });
 
         if (spanEnd - cursor > EPSILON) {
-            const start = segment.orientation === 'horizontal'
-                ? { x: cursor, y: axis }
-                : { x: axis, y: cursor };
-            const end = segment.orientation === 'horizontal'
-                ? { x: spanEnd, y: axis }
-                : { x: axis, y: spanEnd };
+            const start = pointOnCanonicalLine(
+                cursor,
+                keyed.line.directionX,
+                keyed.line.directionY,
+                keyed.line.normalX,
+                keyed.line.normalY,
+                keyed.line.offset
+            );
+            const end = pointOnCanonicalLine(
+                spanEnd,
+                keyed.line.directionX,
+                keyed.line.directionY,
+                keyed.line.normalX,
+                keyed.line.normalY,
+                keyed.line.offset
+            );
 
             pieces.push({
                 ...segment,

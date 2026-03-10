@@ -24,9 +24,21 @@ import { clampSpiralCoreRadius, directionToAngle, getStairKind } from '../../uti
 const DEFAULT_LEVEL_HEIGHT = 3.2;
 const WALL_THICKNESS = 0.18;
 const FLOOR_THICKNESS = 0.12;
+const CEILING_THICKNESS = 0.035;
+const FLOOR_SURFACE_LIFT = 0.004;
+const CEILING_CLEARANCE = 0.018;
+const SURFACE_CLEARANCE = 0.014;
 const ROOM_WALL_COLOR = '#eef2f6';
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const ignoreLockedRaycast = () => null;
+const ROOM_FLOOR_RENDER_ORDER = 8;
+const ROOM_CEILING_RENDER_ORDER = 9;
+const SURFACE_RENDER_ORDER = 12;
+const RULER_RENDER_ORDER = 16;
+
+function usesTransparentPass(opacity: number) {
+    return opacity < 0.999;
+}
 
 type WallOpening = {
     startDistance: number;
@@ -297,8 +309,12 @@ function Room3D({ room, floor, openings = [] }: { room: Room; floor: Floor; open
     const { setActiveFloor, setSelectedElement } = useStore();
     const layer = (floor.layerSettings || defaultLayerSettings).rooms;
     if (layer && !layer.visible) return null;
+    const opacity = layer?.opacity ?? 1;
     const rotationRadians = -THREE.MathUtils.degToRad(room.rotation || 0);
     const roomHeight = room.wallHeight || floor.height || DEFAULT_LEVEL_HEIGHT;
+    const floorTopY = floor.elevation + FLOOR_SURFACE_LIFT;
+    const ceilingTopY = floor.elevation + Math.max(roomHeight - CEILING_CLEARANCE, FLOOR_THICKNESS + CEILING_THICKNESS);
+    const ceilingCenterY = ceilingTopY - CEILING_THICKNESS / 2;
     const ceilingColor = useMemo(
         () => new THREE.Color(room.color || '#dddddd').lerp(new THREE.Color('#ffffff'), 0.22),
         [room.color]
@@ -331,28 +347,28 @@ function Room3D({ room, floor, openings = [] }: { room: Room; floor: Floor; open
     if (polygonShape) {
         return (
             <group onClick={handleSelect} raycast={room.locked ? ignoreLockedRaycast : undefined}>
-                <group position={[0, floor.elevation + 0.002, 0]} rotation={[Math.PI / 2, 0, 0]}>
-                    <mesh receiveShadow castShadow>
+                <group position={[0, floorTopY, 0]} rotation={[Math.PI / 2, 0, 0]}>
+                    <mesh receiveShadow castShadow renderOrder={ROOM_FLOOR_RENDER_ORDER}>
                         <extrudeGeometry args={[polygonShape, { depth: FLOOR_THICKNESS, bevelEnabled: false }]} />
                         <meshStandardMaterial
                             color={room.color || '#dddddd'}
                             roughness={0.85}
                             side={THREE.DoubleSide}
-                            transparent={true}
-                            opacity={layer?.opacity ?? 1}
+                            transparent={usesTransparentPass(opacity)}
+                            opacity={opacity}
                         />
                     </mesh>
                 </group>
                 {room.showCeiling && (
-                    <group position={[0, floor.elevation + roomHeight, 0]} rotation={[Math.PI / 2, 0, 0]}>
-                        <mesh receiveShadow castShadow>
-                            <extrudeGeometry args={[polygonShape, { depth: FLOOR_THICKNESS, bevelEnabled: false }]} />
+                    <group position={[0, ceilingTopY, 0]} rotation={[Math.PI / 2, 0, 0]}>
+                        <mesh receiveShadow castShadow renderOrder={ROOM_CEILING_RENDER_ORDER}>
+                            <extrudeGeometry args={[polygonShape, { depth: CEILING_THICKNESS, bevelEnabled: false }]} />
                             <meshStandardMaterial
                                 color={ceilingColor}
                                 roughness={0.72}
                                 side={THREE.DoubleSide}
-                                transparent={true}
-                                opacity={layer?.opacity ?? 1}
+                                transparent={usesTransparentPass(opacity)}
+                                opacity={opacity}
                             />
                         </mesh>
                     </group>
@@ -366,35 +382,35 @@ function Room3D({ room, floor, openings = [] }: { room: Room; floor: Floor; open
             {(canUseOpenings ? floorPatches : [{ x: room.x, y: room.y, width: room.width, height: room.height }]).map((patch, index) => (
                 <group
                     key={`${room.id}-patch-${index}`}
-                    position={[patch.x + patch.width / 2, floor.elevation, patch.y + patch.height / 2]}
+                    position={[patch.x + patch.width / 2, floorTopY - FLOOR_THICKNESS / 2, patch.y + patch.height / 2]}
                     rotation={[0, canUseOpenings ? 0 : rotationRadians, 0]}
                     onClick={handleSelect}
                     raycast={room.locked ? ignoreLockedRaycast : undefined}
                 >
-            <Box args={[patch.width, FLOOR_THICKNESS, patch.height]} position={[0, -FLOOR_THICKNESS / 2, 0]} castShadow receiveShadow>
-                <meshStandardMaterial
-                    color={room.color || '#dddddd'}
-                    roughness={0.85}
-                    transparent={true}
-                    opacity={layer?.opacity ?? 1}
-                />
-            </Box>
+                    <Box args={[patch.width, FLOOR_THICKNESS, patch.height]} castShadow receiveShadow renderOrder={ROOM_FLOOR_RENDER_ORDER}>
+                        <meshStandardMaterial
+                            color={room.color || '#dddddd'}
+                            roughness={0.85}
+                            transparent={usesTransparentPass(opacity)}
+                            opacity={opacity}
+                        />
+                    </Box>
                 </group>
             ))}
             {room.showCeiling && (canUseOpenings ? floorPatches : [{ x: room.x, y: room.y, width: room.width, height: room.height }]).map((patch, index) => (
                 <group
                     key={`${room.id}-ceiling-${index}`}
-                    position={[patch.x + patch.width / 2, floor.elevation + roomHeight - FLOOR_THICKNESS / 2, patch.y + patch.height / 2]}
+                    position={[patch.x + patch.width / 2, ceilingCenterY, patch.y + patch.height / 2]}
                     rotation={[0, canUseOpenings ? 0 : rotationRadians, 0]}
                     raycast={room.locked ? ignoreLockedRaycast : undefined}
                     onClick={handleSelect}
                 >
-                    <Box args={[patch.width, FLOOR_THICKNESS, patch.height]} castShadow receiveShadow>
+                    <Box args={[patch.width, CEILING_THICKNESS, patch.height]} castShadow receiveShadow renderOrder={ROOM_CEILING_RENDER_ORDER}>
                         <meshStandardMaterial
                             color={ceilingColor}
                             roughness={0.72}
-                            transparent={true}
-                            opacity={layer?.opacity ?? 1}
+                            transparent={usesTransparentPass(opacity)}
+                            opacity={opacity}
                         />
                     </Box>
                 </group>
@@ -1005,6 +1021,8 @@ function Surface3D({ surface, floor }: { surface: Surface; floor: Floor }) {
     const altitude = surface.altitude || 0;
     const layer = (floor.layerSettings || defaultLayerSettings).surfaces;
     if (layer && !layer.visible) return null;
+    const opacity = layer?.opacity ?? 1;
+    const surfaceBaseY = floor.elevation + altitude + SURFACE_CLEARANCE;
 
     const shape = useMemo(() => {
         if (!surface.points || surface.points.length < 3) return null;
@@ -1025,8 +1043,8 @@ function Surface3D({ surface, floor }: { surface: Surface; floor: Floor }) {
 
     return (
         <group
-            position={[0, floor.elevation + altitude + 0.01, 0]}
-            rotation={[Math.PI / 2, 0, 0]}
+            position={[0, surfaceBaseY, 0]}
+            rotation={[-Math.PI / 2, 0, 0]}
             raycast={surface.locked ? ignoreLockedRaycast : undefined}
             onClick={(event) => {
                 event.stopPropagation();
@@ -1034,13 +1052,13 @@ function Surface3D({ surface, floor }: { surface: Surface; floor: Floor }) {
                 setSelectedElement({ id: surface.id, type: 'surface' });
             }}
         >
-            <mesh receiveShadow castShadow>
+            <mesh receiveShadow castShadow renderOrder={SURFACE_RENDER_ORDER}>
                 <extrudeGeometry args={[shape, { depth, bevelEnabled: false }]} />
                 <meshStandardMaterial
                     color={surface.color || '#cccccc'}
                     side={THREE.DoubleSide}
-                    transparent={layer?.opacity !== undefined ? layer.opacity < 1 : false}
-                    opacity={layer?.opacity ?? 1}
+                    transparent={usesTransparentPass(opacity)}
+                    opacity={opacity}
                 />
             </mesh>
         </group>
@@ -1051,6 +1069,7 @@ function Ruler3D({ ruler, floor }: { ruler: Ruler; floor: Floor }) {
     const { setActiveFloor, setSelectedElement } = useStore();
     const layer = (floor.layerSettings || defaultLayerSettings).rulers;
     if (layer && !layer.visible) return null;
+    const opacity = layer?.opacity ?? 1;
 
     const dx = ruler.endX - ruler.startX;
     const dz = ruler.endY - ruler.startY;
@@ -1059,7 +1078,7 @@ function Ruler3D({ ruler, floor }: { ruler: Ruler; floor: Floor }) {
 
     return (
         <group
-            position={[(ruler.startX + ruler.endX) / 2, floor.elevation + 0.04, (ruler.startY + ruler.endY) / 2]}
+            position={[(ruler.startX + ruler.endX) / 2, floor.elevation + SURFACE_CLEARANCE + 0.04, (ruler.startY + ruler.endY) / 2]}
             rotation={[0, -Math.atan2(dz, dx), 0]}
             raycast={ruler.locked ? ignoreLockedRaycast : undefined}
             onClick={(event) => {
@@ -1068,20 +1087,20 @@ function Ruler3D({ ruler, floor }: { ruler: Ruler; floor: Floor }) {
                 setSelectedElement({ id: ruler.id, type: 'ruler' });
             }}
         >
-            <Box args={[length, 0.028, 0.06]} castShadow receiveShadow>
+            <Box args={[length, 0.028, 0.06]} castShadow receiveShadow renderOrder={RULER_RENDER_ORDER}>
                 <meshStandardMaterial
                     color={ruler.color || '#7dd3fc'}
                     emissive={ruler.color || '#7dd3fc'}
                     emissiveIntensity={0.18}
-                    transparent={layer?.opacity !== undefined ? layer.opacity < 1 : false}
-                    opacity={layer?.opacity ?? 1}
+                    transparent={usesTransparentPass(opacity)}
+                    opacity={opacity}
                 />
             </Box>
-            <Box args={[0.08, 0.08, 0.08]} position={[-length / 2, 0, 0]} castShadow receiveShadow>
-                <meshStandardMaterial color="#e8f3ff" transparent={layer?.opacity !== undefined ? layer.opacity < 1 : false} opacity={layer?.opacity ?? 1} />
+            <Box args={[0.08, 0.08, 0.08]} position={[-length / 2, 0, 0]} castShadow receiveShadow renderOrder={RULER_RENDER_ORDER}>
+                <meshStandardMaterial color="#e8f3ff" transparent={usesTransparentPass(opacity)} opacity={opacity} />
             </Box>
-            <Box args={[0.08, 0.08, 0.08]} position={[length / 2, 0, 0]} castShadow receiveShadow>
-                <meshStandardMaterial color="#e8f3ff" transparent={layer?.opacity !== undefined ? layer.opacity < 1 : false} opacity={layer?.opacity ?? 1} />
+            <Box args={[0.08, 0.08, 0.08]} position={[length / 2, 0, 0]} castShadow receiveShadow renderOrder={RULER_RENDER_ORDER}>
+                <meshStandardMaterial color="#e8f3ff" transparent={usesTransparentPass(opacity)} opacity={opacity} />
             </Box>
         </group>
     );
