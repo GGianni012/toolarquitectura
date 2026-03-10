@@ -1,4 +1,4 @@
-import { useStore, Room, Furniture, Wall, Cylinder, Door, Surface, Floor, Stair, Ruler, defaultLayerSettings } from '../../store/useStore';
+import { useStore, Room, Furniture, Wall, Cylinder, Door, Window, Surface, Floor, Stair, Ruler, defaultLayerSettings } from '../../store/useStore';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Environment, ContactShadows, Box, Plane, Cylinder as CylinderShape } from '@react-three/drei';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -13,6 +13,7 @@ import {
     getStairOpeningFloorId,
     getWallSegment,
     resolveDoorPlacement,
+    resolveWindowPlacement,
     subtractRectHolesFromRect,
     subtractWallOverlapsFromRoomSegments,
     type FittedDoorPlacement,
@@ -102,7 +103,8 @@ function createShapePath(points: Array<{ x: number; y: number }>, reverse = fals
 type WallOpening = {
     startDistance: number;
     endDistance: number;
-    doorHeight: number;
+    bottomOffset: number;
+    topOffset: number;
 };
 
 function projectDistanceOnSegment(
@@ -119,30 +121,21 @@ function projectDistanceOnSegment(
 }
 
 function normalizeWallOpenings(openings: WallOpening[], length: number, height: number) {
-    const prepared = openings
+    return openings
         .map((opening) => {
             const startDistance = THREE.MathUtils.clamp(opening.startDistance, 0, length);
             const endDistance = THREE.MathUtils.clamp(opening.endDistance, 0, length);
+            const bottomOffset = THREE.MathUtils.clamp(opening.bottomOffset, 0, Math.max(height - 0.06, 0));
+            const topOffset = THREE.MathUtils.clamp(opening.topOffset, bottomOffset + 0.05, height - 0.02);
             return {
                 startDistance: Math.min(startDistance, endDistance),
                 endDistance: Math.max(startDistance, endDistance),
-                doorHeight: THREE.MathUtils.clamp(opening.doorHeight, 0.5, height - 0.05)
+                bottomOffset,
+                topOffset
             };
         })
         .filter((opening) => opening.endDistance - opening.startDistance > 0.04)
         .sort((a, b) => a.startDistance - b.startDistance);
-
-    return prepared.reduce<WallOpening[]>((memo, opening) => {
-        const last = memo[memo.length - 1];
-        if (!last || opening.startDistance > last.endDistance + 0.02) {
-            memo.push(opening);
-            return memo;
-        }
-
-        last.endDistance = Math.max(last.endDistance, opening.endDistance);
-        last.doorHeight = Math.max(last.doorHeight, opening.doorHeight);
-        return memo;
-    }, []);
 }
 
 function WallWithOpenings({
@@ -187,17 +180,26 @@ function WallWithOpenings({
                 });
             }
 
-            const headerHeight = height - opening.doorHeight;
-            if (headerHeight > 0.02) {
-                const headerWidth = opening.endDistance - opening.startDistance;
+            const openingWidth = opening.endDistance - opening.startDistance;
+            const bottomHeight = opening.bottomOffset;
+            if (bottomHeight > 0.02) {
                 meshes.push({
-                    key: `header-${index}-${opening.startDistance.toFixed(3)}`,
-                    args: [headerWidth, headerHeight, thickness],
-                    position: [opening.startDistance + headerWidth / 2, opening.doorHeight + headerHeight / 2, 0]
+                    key: `sill-${index}-${opening.startDistance.toFixed(3)}`,
+                    args: [openingWidth, bottomHeight, thickness],
+                    position: [opening.startDistance + openingWidth / 2, bottomHeight / 2, 0]
                 });
             }
 
-            cursor = opening.endDistance;
+            const headerHeight = height - opening.topOffset;
+            if (headerHeight > 0.02) {
+                meshes.push({
+                    key: `header-${index}-${opening.startDistance.toFixed(3)}`,
+                    args: [openingWidth, headerHeight, thickness],
+                    position: [opening.startDistance + openingWidth / 2, opening.topOffset + headerHeight / 2, 0]
+                });
+            }
+
+            cursor = Math.max(cursor, opening.endDistance);
         });
 
         const tailSpan = length - cursor;
@@ -646,6 +648,63 @@ function Door3D({ door, placement, floor, thickness }: { door: Door; placement: 
                     color={door.color || '#c78d54'}
                     metalness={0.05}
                     roughness={0.45}
+                    {...getBlendMaterialProps(opacity)}
+                />
+            </Box>
+        </group>
+    );
+}
+
+function Window3D({ window, placement, floor, thickness }: { window: Window; placement: FittedDoorPlacement; floor: Floor; thickness?: number }) {
+    const { setActiveFloor, setSelectedElement } = useStore();
+    const frameDepth = Math.min(thickness || WALL_THICKNESS, 0.08);
+    const glassDepth = Math.max(frameDepth * 0.5, 0.03);
+    const frameWidth = Math.max(placement.width - 0.08, 0.12);
+    const frameHeight = Math.max(placement.doorHeight - 0.08, 0.12);
+    const layer = (floor.layerSettings || defaultLayerSettings).windows;
+    if (layer && !layer.visible) return null;
+    const opacity = layer?.opacity ?? 1;
+    const renderOrder = getFloorRenderBaseOrder(floor) + 19;
+    const centerY = placement.bottomOffset + placement.doorHeight / 2;
+
+    return (
+        <group
+            position={[placement.center.x, floor.elevation + centerY, placement.center.y]}
+            rotation={[0, -placement.angle, 0]}
+            raycast={window.locked ? ignoreLockedRaycast : undefined}
+            onClick={(event) => {
+                event.stopPropagation();
+                setActiveFloor(window.floorId);
+                setSelectedElement({ id: window.id, type: 'window' });
+            }}
+        >
+            <Box args={[placement.width, placement.doorHeight, frameDepth]} castShadow receiveShadow renderOrder={renderOrder}>
+                <meshStandardMaterial
+                    color={window.color || '#d8ecff'}
+                    metalness={0.18}
+                    roughness={0.38}
+                    {...getBlendMaterialProps(opacity)}
+                />
+            </Box>
+            <Box args={[frameWidth, frameHeight, glassDepth]} position={[0, 0, frameDepth * 0.12]} renderOrder={renderOrder + 1}>
+                <meshStandardMaterial
+                    color="#dff4ff"
+                    emissive="#8ccfff"
+                    emissiveIntensity={0.08}
+                    transparent
+                    opacity={Math.max(0.12, opacity * 0.38)}
+                    depthWrite={false}
+                    depthTest
+                    premultipliedAlpha
+                    metalness={0.04}
+                    roughness={0.06}
+                />
+            </Box>
+            <Box args={[Math.max(frameDepth * 0.4, 0.03), frameHeight, frameDepth]} renderOrder={renderOrder + 2}>
+                <meshStandardMaterial
+                    color="#f7fbff"
+                    metalness={0.12}
+                    roughness={0.25}
                     {...getBlendMaterialProps(opacity)}
                 />
             </Box>
@@ -1522,7 +1581,7 @@ function SceneNavigation({
 }
 
 export default function Canvas3D() {
-    const { floors, rooms, furniture, walls, cylinders, doors, surfaces, stairs, rulers, activeFloorId, setActiveFloor, setVisibleFloors, setSelectedElement } = useStore();
+    const { floors, rooms, furniture, walls, cylinders, doors, windows, surfaces, stairs, rulers, activeFloorId, setActiveFloor, setVisibleFloors, setSelectedElement } = useStore();
     const [fitRequestToken, setFitRequestToken] = useState(0);
     const controlsRef = useRef<OrbitControlsImpl>(null);
 
@@ -1561,6 +1620,16 @@ export default function Canvas3D() {
             })
             .filter((entry): entry is { door: Door; placement: FittedDoorPlacement } => entry !== null),
         [doors, floorMap, rooms, walls]
+    );
+    const visibleWindows = useMemo(
+        () => windows
+            .map((window) => {
+                const placement = resolveWindowPlacement(window, rooms, walls);
+                if (!placement || !floorMap.has(placement.floorId)) return null;
+                return { window, placement };
+            })
+            .filter((entry): entry is { window: Window; placement: FittedDoorPlacement } => entry !== null),
+        [floorMap, rooms, walls, windows]
     );
     const stairOpeningsByFloor = useMemo(() => {
         const nextMap = new Map<string, Rect2D[]>();
@@ -1606,13 +1675,26 @@ export default function Canvas3D() {
             openings.push({
                 startDistance: placement.startDistance,
                 endDistance: placement.endDistance,
-                doorHeight: placement.doorHeight
+                bottomOffset: placement.bottomOffset,
+                topOffset: placement.topOffset
+            });
+            nextMap.set(placement.hostId, openings);
+        });
+
+        visibleWindows.forEach(({ placement }) => {
+            if (placement.hostKind !== 'wall') return;
+            const openings = nextMap.get(placement.hostId) || [];
+            openings.push({
+                startDistance: placement.startDistance,
+                endDistance: placement.endDistance,
+                bottomOffset: placement.bottomOffset,
+                topOffset: placement.topOffset
             });
             nextMap.set(placement.hostId, openings);
         });
 
         return nextMap;
-    }, [visibleDoors]);
+    }, [visibleDoors, visibleWindows]);
     const roomSegmentDoorMap = useMemo(() => {
         const nextMap = new Map<string, WallOpening[]>();
 
@@ -1647,22 +1729,18 @@ export default function Canvas3D() {
                 openings.push({
                     startDistance: overlapStart - Math.min(segmentStartDistance, segmentEndDistance),
                     endDistance: overlapEnd - Math.min(segmentStartDistance, segmentEndDistance),
-                    doorHeight: placement.doorHeight
+                    bottomOffset: placement.bottomOffset,
+                    topOffset: placement.topOffset
                 });
                 nextMap.set(segment.id, openings);
             });
         });
 
-        return nextMap;
-    }, [roomWallSegments, visibleDoors]);
-    const renderableDoors = useMemo(
-        () => visibleDoors.filter(({ placement }) => {
-            if (placement.hostKind !== 'room' || !placement.edge) {
-                return true;
-            }
+        visibleWindows.forEach(({ placement }) => {
+            if (placement.hostKind !== 'room' || !placement.edge) return;
 
-            return roomWallSegments.some((segment) => {
-                if (!segment.visible || segment.floorId !== placement.floorId) return false;
+            roomWallSegments.forEach((segment) => {
+                if (segment.floorId !== placement.floorId) return;
 
                 const matchesContributor = segment.contributors.some(
                     (contributor) => contributor.roomId === placement.hostId
@@ -1672,17 +1750,67 @@ export default function Canvas3D() {
                                 : contributor.edge === placement.edge
                         )
                 );
-                if (!matchesContributor) return false;
+                if (!matchesContributor) return;
 
                 const segmentStartDistance = projectDistanceOnSegment(placement.start, placement.end, segment.start);
                 const segmentEndDistance = projectDistanceOnSegment(placement.start, placement.end, segment.end);
                 const overlapStart = Math.max(placement.startDistance, Math.min(segmentStartDistance, segmentEndDistance));
                 const overlapEnd = Math.min(placement.endDistance, Math.max(segmentStartDistance, segmentEndDistance));
 
-                return overlapEnd - overlapStart > 0.04;
+                if (overlapEnd - overlapStart <= 0.04) return;
+
+                const openings = nextMap.get(segment.id) || [];
+                openings.push({
+                    startDistance: overlapStart - Math.min(segmentStartDistance, segmentEndDistance),
+                    endDistance: overlapEnd - Math.min(segmentStartDistance, segmentEndDistance),
+                    bottomOffset: placement.bottomOffset,
+                    topOffset: placement.topOffset
+                });
+                nextMap.set(segment.id, openings);
             });
+        });
+
+        return nextMap;
+    }, [roomWallSegments, visibleDoors, visibleWindows]);
+    const hasVisibleRoomSegmentOverlap = (placement: FittedDoorPlacement) => roomWallSegments.some((segment) => {
+        if (!segment.visible || segment.floorId !== placement.floorId) return false;
+
+        const matchesContributor = segment.contributors.some(
+            (contributor) => contributor.roomId === placement.hostId
+                && (
+                    placement.edgeIndex !== undefined
+                        ? contributor.edgeIndex === placement.edgeIndex
+                        : contributor.edge === placement.edge
+                )
+        );
+        if (!matchesContributor) return false;
+
+        const segmentStartDistance = projectDistanceOnSegment(placement.start, placement.end, segment.start);
+        const segmentEndDistance = projectDistanceOnSegment(placement.start, placement.end, segment.end);
+        const overlapStart = Math.max(placement.startDistance, Math.min(segmentStartDistance, segmentEndDistance));
+        const overlapEnd = Math.min(placement.endDistance, Math.max(segmentStartDistance, segmentEndDistance));
+
+        return overlapEnd - overlapStart > 0.04;
+    });
+    const renderableDoors = useMemo(
+        () => visibleDoors.filter(({ placement }) => {
+            if (placement.hostKind !== 'room' || !placement.edge) {
+                return true;
+            }
+
+            return hasVisibleRoomSegmentOverlap(placement);
         }),
         [roomWallSegments, visibleDoors]
+    );
+    const renderableWindows = useMemo(
+        () => visibleWindows.filter(({ placement }) => {
+            if (placement.hostKind !== 'room' || !placement.edge) {
+                return true;
+            }
+
+            return hasVisibleRoomSegmentOverlap(placement);
+        }),
+        [roomWallSegments, visibleWindows]
     );
 
     const sceneBounds = useMemo(
@@ -1829,6 +1957,18 @@ export default function Canvas3D() {
                             key={door.door.id}
                             door={door.door}
                             placement={door.placement}
+                            floor={floor}
+                        />
+                    ) : null;
+                })}
+
+                {renderableWindows.map((window) => {
+                    const floor = floorMap.get(window.placement.floorId);
+                    return floor ? (
+                        <Window3D
+                            key={window.window.id}
+                            window={window.window}
+                            placement={window.placement}
                             floor={floor}
                         />
                     ) : null;

@@ -1,4 +1,4 @@
-import { useStore, Room, Wall, Furniture, Door, Cylinder, Surface, Stair, Ruler, FloorReference, defaultLayerSettings } from '../../store/useStore';
+import { useStore, Room, Wall, Furniture, Door, Window, Cylinder, Surface, Stair, Ruler, FloorReference, defaultLayerSettings } from '../../store/useStore';
 import { useDrag } from '@use-gesture/react';
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
@@ -12,6 +12,7 @@ import {
     getStairOpeningFloorId,
     isRoomWallVisible,
     resolveDoorPlacement,
+    resolveWindowPlacement,
     type DoorHostCandidate,
     type Rect2D
 } from '../../utils/buildingGeometry';
@@ -1591,6 +1592,67 @@ function DoorElement({ door, scale }: { door: Door; scale: number }) {
     );
 }
 
+function WindowElement({ window, scale }: { window: Window; scale: number }) {
+    const { rooms, walls, floors, updateWindow, interactMode, selectedElement, setSelectedElement } = useStore();
+    const placement = resolveWindowPlacement(window, rooms, walls);
+    if (!placement) return null;
+    const floor = floors.find((f) => f.id === window.floorId);
+    const layer = (floor?.layerSettings || defaultLayerSettings).windows;
+    if (layer && !layer.visible) return null;
+
+    const bind = useDrag(({ movement: [mx, my], first, memo }) => {
+        if (interactMode !== 'select' || window.locked) return memo;
+        if (first || !memo) {
+            memo = { centerDistance: placement.centerDistance };
+        }
+
+        const dx = (mx / scale) / GRID_SIZE;
+        const dy = (my / scale) / GRID_SIZE;
+        const directionX = (placement.end.x - placement.start.x) / placement.length;
+        const directionY = (placement.end.y - placement.start.y) / placement.length;
+        const deltaAlongSegment = dx * directionX + dy * directionY;
+        const nextRatio = (memo.centerDistance + deltaAlongSegment) / placement.length;
+
+        updateWindow(window.id, { ratio: Math.min(Math.max(nextRatio, 0), 1) });
+        return memo;
+    }, {
+        enabled: interactMode === 'select' && !window.locked
+    });
+
+    const bindProps: any = bind();
+    const isSelected = selectedElement?.id === window.id;
+    const angle = placement.angle * (180 / Math.PI);
+
+    return (
+        <div
+            {...bindProps}
+            onPointerDown={(e) => {
+                e.stopPropagation();
+                if (interactMode === 'select') {
+                    setSelectedElement({ id: window.id, type: 'window' });
+                }
+                bindProps.onPointerDown?.(e);
+            }}
+            style={{
+                position: 'absolute',
+                left: placement.center.x * GRID_SIZE,
+                top: placement.center.y * GRID_SIZE,
+                width: placement.width * GRID_SIZE,
+                height: 10,
+                background: `linear-gradient(180deg, ${window.color || '#7dd3fc'}, rgba(255,255,255,0.88))`,
+                transform: `translate(-50%, -50%) rotate(${angle}deg)`,
+                cursor: interactMode === 'select' && !window.locked ? 'grab' : 'default',
+                pointerEvents: window.locked ? 'none' : 'auto',
+                zIndex: getCanvasStackOrder(52, window.locked),
+                boxShadow: '0 2px 10px rgba(56, 189, 248, 0.4)',
+                borderRadius: 999,
+                border: isSelected ? '2px solid white' : '1px solid rgba(255,255,255,0.82)',
+                opacity: layer?.opacity ?? 1
+            }}
+        />
+    );
+}
+
 function StairElement({
     stair,
     scale,
@@ -2049,6 +2111,7 @@ export default function Canvas2D() {
         furniture,
         walls,
         doors,
+        windows,
         cylinders,
         surfaces,
         stairs,
@@ -2056,6 +2119,7 @@ export default function Canvas2D() {
         activeFloorId,
         addWall,
         addDoor,
+        addWindow,
         addRoom,
         addFurniture,
         addCylinder,
@@ -2090,6 +2154,15 @@ export default function Canvas2D() {
             .filter((entry): entry is { door: Door; placement: NonNullable<ReturnType<typeof resolveDoorPlacement>> } => entry !== null),
         [doors, rooms, walls]
     );
+    const resolvedWindows = useMemo(
+        () => windows
+            .map((window) => {
+                const placement = resolveWindowPlacement(window, rooms, walls);
+                return placement ? { window, placement } : null;
+            })
+            .filter((entry): entry is { window: Window; placement: NonNullable<ReturnType<typeof resolveWindowPlacement>> } => entry !== null),
+        [rooms, walls, windows]
+    );
     const stairOpeningsByFloor = useMemo(() => {
         const nextMap = new Map<string, Rect2D[]>();
 
@@ -2116,6 +2189,10 @@ export default function Canvas2D() {
         () => resolvedDoors.filter((entry) => entry.placement.floorId === activeFloorId).map((entry) => entry.door),
         [activeFloorId, resolvedDoors]
     );
+    const visibleWindows = useMemo(
+        () => resolvedWindows.filter((entry) => entry.placement.floorId === activeFloorId).map((entry) => entry.window),
+        [activeFloorId, resolvedWindows]
+    );
     const visibleCylinders = cylinders.filter((cylinder) => cylinder.floorId === activeFloorId);
     const visibleSurfaces = surfaces.filter((surface) => surface.floorId === activeFloorId);
     const visibleStairs = stairs.filter((stair) => stair.floorId === activeFloorId);
@@ -2135,6 +2212,7 @@ export default function Canvas2D() {
     const sortedVisibleRulers = useMemo(() => sortLockedFirst(visibleRulers), [visibleRulers]);
     const sortedVisibleFurniture = useMemo(() => sortLockedFirst(visibleFurniture), [visibleFurniture]);
     const sortedVisibleDoors = useMemo(() => sortLockedFirst(visibleDoors), [visibleDoors]);
+    const sortedVisibleWindows = useMemo(() => sortLockedFirst(visibleWindows), [visibleWindows]);
     const distanceCandidates = useMemo(
         () => [
             ...visibleRooms.map((room) => ({ id: room.id, rect: getObjectBounds(room, 'room') })),
@@ -2199,10 +2277,11 @@ export default function Canvas2D() {
                     surfaces: surfaces.filter((surface) => surface.floorId === floor.id),
                     stairs: stairs.filter((stair) => stair.floorId === floor.id),
                     doors: resolvedDoors.filter((entry) => entry.placement.floorId === floor.id),
+                    windows: resolvedWindows.filter((entry) => entry.placement.floorId === floor.id),
                     roomOpenings
                 };
             });
-    }, [activeFloorId, cylinders, floors, resolvedDoors, rooms, stairOpeningsByFloor, stairs, surfaces, walls]);
+    }, [activeFloorId, cylinders, floors, resolvedDoors, resolvedWindows, rooms, stairOpeningsByFloor, stairs, surfaces, walls]);
 
     const defaultTargetFloorId = useMemo(() => {
         return resolvePreferredStairTargetFloorId(floors, activeFloorId);
@@ -2278,11 +2357,37 @@ export default function Canvas2D() {
         const point = toWorldPoint(e.clientX, e.clientY);
         if (!point) return;
 
-        if (interactMode === 'place_door') {
+        if (interactMode === 'place_door' || interactMode === 'place_window') {
             const host = findClosestDoorHost(point, visibleRooms, visibleWalls, activeFloorId, DOOR_PLACE_THRESHOLD);
             if (!host) return;
 
-            if (host.hostKind === 'room' && (host.edge || host.edgeIndex !== undefined)) {
+            if (interactMode === 'place_window') {
+                if (host.hostKind === 'room' && (host.edge || host.edgeIndex !== undefined)) {
+                    addWindow({
+                        hostKind: 'room',
+                        roomId: host.hostId,
+                        edge: host.edge,
+                        edgeIndex: host.edgeIndex,
+                        ratio: host.ratio,
+                        width: 1.2,
+                        windowHeight: 1.2,
+                        sillHeight: 0.9,
+                        color: '#7dd3fc',
+                        name: 'Window'
+                    });
+                } else {
+                    addWindow({
+                        hostKind: 'wall',
+                        wallId: host.hostId,
+                        ratio: host.ratio,
+                        width: 1.2,
+                        windowHeight: 1.2,
+                        sillHeight: 0.9,
+                        color: '#7dd3fc',
+                        name: 'Window'
+                    });
+                }
+            } else if (host.hostKind === 'room' && (host.edge || host.edgeIndex !== undefined)) {
                 addDoor({
                     hostKind: 'room',
                     roomId: host.hostId,
@@ -2357,7 +2462,7 @@ export default function Canvas2D() {
         const point = toWorldPoint(e.clientX, e.clientY);
         if (!point) return;
 
-        if (interactMode === 'place_door') {
+        if (interactMode === 'place_door' || interactMode === 'place_window') {
             setDoorPreview(findClosestDoorHost(point, visibleRooms, visibleWalls, activeFloorId, DOOR_PLACE_THRESHOLD));
             return;
         }
@@ -2392,7 +2497,7 @@ export default function Canvas2D() {
         setSnapGuides([]);
         setDistanceGuides([]);
 
-        if (interactMode !== 'place_door') {
+        if (interactMode !== 'place_door' && interactMode !== 'place_window') {
             setDoorPreview(null);
         }
     };
@@ -2469,12 +2574,20 @@ export default function Canvas2D() {
 
     const helpText = interactMode === 'place_door'
         ? 'Door tool: click a room edge or drawn wall to place a door.'
-        : interactMode === 'draw_surface'
+        : interactMode === 'place_window'
+            ? 'Window tool: click a room edge or drawn wall to place a window.'
+            : interactMode === 'draw_surface'
             ? 'Draw Room: click to place points, then click the first point again to close the modular room.'
             : 'Pan: Space + drag or Alt + drag. Zoom: pinch or Ctrl + wheel. Grid is guide-only.';
 
     const previewDoor = doorPreview
-        ? fitDoorToHostSegment(doorPreview, 0.9, 2.1, doorPreview.ratio)
+        ? fitDoorToHostSegment(
+            doorPreview,
+            interactMode === 'place_window' ? 1.2 : 0.9,
+            interactMode === 'place_window' ? 1.2 : 2.1,
+            doorPreview.ratio,
+            interactMode === 'place_window' ? 0.9 : 0
+        )
         : null;
 
     return (
@@ -2558,6 +2671,17 @@ export default function Canvas2D() {
                                         x2={(placement.center.x + ((placement.width / 2) * Math.cos(placement.angle))) * GRID_SIZE}
                                         y2={(placement.center.y + ((placement.width / 2) * Math.sin(placement.angle))) * GRID_SIZE}
                                         className="ghost-door"
+                                    />
+                                ))}
+                                {ghostFloor.windows.map(({ window, placement }) => (
+                                    <line
+                                        key={window.id}
+                                        x1={(placement.center.x - ((placement.width / 2) * Math.cos(placement.angle))) * GRID_SIZE}
+                                        y1={(placement.center.y - ((placement.width / 2) * Math.sin(placement.angle))) * GRID_SIZE}
+                                        x2={(placement.center.x + ((placement.width / 2) * Math.cos(placement.angle))) * GRID_SIZE}
+                                        y2={(placement.center.y + ((placement.width / 2) * Math.sin(placement.angle))) * GRID_SIZE}
+                                        className="ghost-door"
+                                        stroke="rgba(125, 211, 252, 0.78)"
                                     />
                                 ))}
                             </svg>
@@ -2787,15 +2911,18 @@ export default function Canvas2D() {
                     {sortedVisibleDoors.map((door) => (
                         <DoorElement key={door.id} door={door} scale={scale} />
                     ))}
-                    {previewDoor && interactMode === 'place_door' && (
+                    {sortedVisibleWindows.map((window) => (
+                        <WindowElement key={window.id} window={window} scale={scale} />
+                    ))}
+                    {previewDoor && (interactMode === 'place_door' || interactMode === 'place_window') && (
                         <div
                             style={{
                                 position: 'absolute',
                                 left: previewDoor.center.x * GRID_SIZE,
                                 top: previewDoor.center.y * GRID_SIZE,
                                 width: previewDoor.width * GRID_SIZE,
-                                height: 12,
-                                backgroundColor: 'rgba(251, 191, 36, 0.45)',
+                                height: interactMode === 'place_window' ? 10 : 12,
+                                backgroundColor: interactMode === 'place_window' ? 'rgba(125, 211, 252, 0.45)' : 'rgba(251, 191, 36, 0.45)',
                                 border: '1px dashed rgba(255,255,255,0.75)',
                                 borderRadius: 999,
                                 transform: `translate(-50%, -50%) rotate(${previewDoor.angle * (180 / Math.PI)}deg)`,

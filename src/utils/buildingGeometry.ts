@@ -1,4 +1,4 @@
-import type { Door, DoorHostKind, Floor, Room, RoomEdge, Wall } from '../store/useStore';
+import type { Door, DoorHostKind, Floor, Room, RoomEdge, Wall, Window } from '../store/useStore';
 
 const EPSILON = 0.0001;
 const MIN_DOOR_MARGIN = 0.08;
@@ -32,12 +32,16 @@ export interface DoorHostSegment {
 export interface FittedDoorPlacement extends DoorHostSegment {
     width: number;
     doorHeight: number;
+    bottomOffset: number;
+    topOffset: number;
     ratio: number;
     centerDistance: number;
     startDistance: number;
     endDistance: number;
     center: Point2D;
 }
+
+type HostedOpening = Door | Window;
 
 export interface DoorHostCandidate extends DoorHostSegment {
     ratio: number;
@@ -254,11 +258,15 @@ export function getRoomBounds(room: Room): Rect2D {
     };
 }
 
-export function getDoorHostKind(door: Door): DoorHostKind | null {
-    if (door.hostKind) return door.hostKind;
-    if (door.roomId && (door.edge || door.edgeIndex !== undefined)) return 'room';
-    if (door.wallId) return 'wall';
+function getOpeningHostKind(opening: HostedOpening): DoorHostKind | null {
+    if (opening.hostKind) return opening.hostKind;
+    if (opening.roomId && (opening.edge || opening.edgeIndex !== undefined)) return 'room';
+    if (opening.wallId) return 'wall';
     return null;
+}
+
+export function getDoorHostKind(door: Door): DoorHostKind | null {
+    return getOpeningHostKind(door);
 }
 
 function getPolygonEdgeSegment(room: Room, edgeIndex: number): DoorHostSegment {
@@ -291,20 +299,28 @@ export function getWallSegment(wall: Wall): DoorHostSegment {
     return buildSegment('wall', wall.id, wall.floorId, { x: wall.startX, y: wall.startY }, { x: wall.endX, y: wall.endY });
 }
 
-export function resolveDoorHostSegment(door: Door, rooms: Room[], walls: Wall[]): DoorHostSegment | null {
-    const hostKind = getDoorHostKind(door);
+function resolveOpeningHostSegment(opening: HostedOpening, rooms: Room[], walls: Wall[]): DoorHostSegment | null {
+    const hostKind = getOpeningHostKind(opening);
 
-    if (hostKind === 'room' && door.roomId && (door.edge || door.edgeIndex !== undefined)) {
-        const room = rooms.find((item) => item.id === door.roomId);
-        return room ? getRoomEdgeSegment(room, door.edge || 'north', door.edgeIndex) : null;
+    if (hostKind === 'room' && opening.roomId && (opening.edge || opening.edgeIndex !== undefined)) {
+        const room = rooms.find((item) => item.id === opening.roomId);
+        return room ? getRoomEdgeSegment(room, opening.edge || 'north', opening.edgeIndex) : null;
     }
 
-    if (door.wallId) {
-        const wall = walls.find((item) => item.id === door.wallId);
+    if (opening.wallId) {
+        const wall = walls.find((item) => item.id === opening.wallId);
         return wall ? getWallSegment(wall) : null;
     }
 
     return null;
+}
+
+export function resolveDoorHostSegment(door: Door, rooms: Room[], walls: Wall[]): DoorHostSegment | null {
+    return resolveOpeningHostSegment(door, rooms, walls);
+}
+
+export function resolveWindowHostSegment(window: Window, rooms: Room[], walls: Wall[]): DoorHostSegment | null {
+    return resolveOpeningHostSegment(window, rooms, walls);
 }
 
 function projectPointToSegment(point: Point2D, start: Point2D, end: Point2D) {
@@ -348,7 +364,8 @@ export function fitDoorToHostSegment(
     host: DoorHostSegment,
     width: number,
     doorHeight: number,
-    ratio: number
+    ratio: number,
+    bottomOffset = 0
 ): FittedDoorPlacement | null {
     if (host.length <= EPSILON) return null;
 
@@ -366,6 +383,8 @@ export function fitDoorToHostSegment(
         ...host,
         width: fittedWidth,
         doorHeight,
+        bottomOffset,
+        topOffset: bottomOffset + doorHeight,
         ratio: normalizedRatio,
         centerDistance,
         startDistance: centerDistance - halfWidth,
@@ -379,6 +398,13 @@ export function resolveDoorPlacement(door: Door, rooms: Room[], walls: Wall[]) {
     if (!host) return null;
 
     return fitDoorToHostSegment(host, door.width, door.doorHeight || 2.1, door.ratio);
+}
+
+export function resolveWindowPlacement(window: Window, rooms: Room[], walls: Wall[]) {
+    const host = resolveWindowHostSegment(window, rooms, walls);
+    if (!host) return null;
+
+    return fitDoorToHostSegment(host, window.width, window.windowHeight || 1.2, window.ratio, window.sillHeight || 0.9);
 }
 
 export function getRectIntersection(a: Rect2D, b: Rect2D): Rect2D | null {

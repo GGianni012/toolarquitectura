@@ -3,7 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { getStairDefaults, resolvePreferredStairTargetFloorId } from '../utils/stairUtils';
 
 export type Mode = '2D' | '3D';
-export type ElementType = 'room' | 'furniture' | 'wall' | 'door' | 'cylinder' | 'surface' | 'stair' | 'ruler';
+export type ElementType = 'room' | 'furniture' | 'wall' | 'door' | 'window' | 'cylinder' | 'surface' | 'stair' | 'ruler';
 export type OpenSide = 'north' | 'south' | 'east' | 'west' | 'none';
 export type RoomEdge = Exclude<OpenSide, 'none'>;
 export type StairDirection = Exclude<OpenSide, 'none'>;
@@ -70,7 +70,7 @@ export interface FloorReference {
     flipY?: boolean;
 }
 
-export type LayerKey = 'rooms' | 'walls' | 'doors' | 'furniture' | 'cylinders' | 'surfaces' | 'stairs' | 'rulers' | 'reference';
+export type LayerKey = 'rooms' | 'walls' | 'doors' | 'windows' | 'furniture' | 'cylinders' | 'surfaces' | 'stairs' | 'rulers' | 'reference';
 
 export type LayerSettings = Record<LayerKey, { visible: boolean; opacity: number }>;
 
@@ -137,6 +137,18 @@ export interface Door extends PositionedElement {
     doorHeight: number;
 }
 
+export interface Window extends PositionedElement {
+    hostKind?: DoorHostKind;
+    wallId?: string;
+    roomId?: string;
+    edge?: RoomEdge;
+    edgeIndex?: number;
+    ratio: number;
+    width: number;
+    windowHeight: number;
+    sillHeight: number;
+}
+
 export interface Stair extends PositionedElement {
     x: number;
     y: number;
@@ -159,7 +171,7 @@ export interface Ruler extends PositionedElement {
     endY: number;
 }
 
-export type InteractMode = 'select' | 'draw_wall' | 'draw_surface' | 'place_door' | 'place_cylinder';
+export type InteractMode = 'select' | 'draw_wall' | 'draw_surface' | 'place_door' | 'place_window' | 'place_cylinder';
 
 type HistorySnapshot = Pick<AppState,
     'floors'
@@ -168,6 +180,7 @@ type HistorySnapshot = Pick<AppState,
     | 'furniture'
     | 'walls'
     | 'doors'
+    | 'windows'
     | 'cylinders'
     | 'surfaces'
     | 'stairs'
@@ -185,6 +198,7 @@ interface AppState {
     furniture: Furniture[];
     walls: Wall[];
     doors: Door[];
+    windows: Window[];
     cylinders: Cylinder[];
     surfaces: Surface[];
     stairs: Stair[];
@@ -215,6 +229,9 @@ interface AppState {
 
     addDoor: (door: Omit<Door, 'id' | 'floorId'> & { floorId?: string }) => void;
     updateDoor: (id: string, data: Partial<Door>) => void;
+
+    addWindow: (window: Omit<Window, 'id' | 'floorId'> & { floorId?: string }) => void;
+    updateWindow: (id: string, data: Partial<Window>) => void;
 
     addCylinder: (cylinder: Omit<Cylinder, 'id' | 'floorId'> & { floorId?: string }) => void;
     updateCylinder: (id: string, data: Partial<Cylinder>) => void;
@@ -248,6 +265,7 @@ export const defaultLayerSettings: LayerSettings = {
     rooms: { visible: true, opacity: 1 },
     walls: { visible: true, opacity: 1 },
     doors: { visible: true, opacity: 1 },
+    windows: { visible: true, opacity: 1 },
     furniture: { visible: true, opacity: 1 },
     cylinders: { visible: true, opacity: 1 },
     surfaces: { visible: true, opacity: 1 },
@@ -260,7 +278,7 @@ const initialFloors: Floor[] = [
     { id: initialFloorId, name: 'Ground Floor', elevation: 0, height: 3.2, visible: true, openSide: 'south', reference: null, layerSettings: defaultLayerSettings }
 ];
 
-function createHistorySnapshot(state: Pick<AppState, 'floors' | 'activeFloorId' | 'rooms' | 'furniture' | 'walls' | 'doors' | 'cylinders' | 'surfaces' | 'stairs' | 'rulers'>): HistorySnapshot {
+function createHistorySnapshot(state: Pick<AppState, 'floors' | 'activeFloorId' | 'rooms' | 'furniture' | 'walls' | 'doors' | 'windows' | 'cylinders' | 'surfaces' | 'stairs' | 'rulers'>): HistorySnapshot {
     return {
         floors: structuredClone(state.floors),
         activeFloorId: state.activeFloorId,
@@ -268,6 +286,7 @@ function createHistorySnapshot(state: Pick<AppState, 'floors' | 'activeFloorId' 
         furniture: structuredClone(state.furniture),
         walls: structuredClone(state.walls),
         doors: structuredClone(state.doors),
+        windows: structuredClone(state.windows),
         cylinders: structuredClone(state.cylinders),
         surfaces: structuredClone(state.surfaces),
         stairs: structuredClone(state.stairs),
@@ -299,6 +318,7 @@ export const useStore = create<AppState>()(persist((set) => ({
     ],
     walls: [],
     doors: [],
+    windows: [],
     cylinders: [],
     surfaces: [],
     stairs: [],
@@ -402,7 +422,10 @@ export const useStore = create<AppState>()(persist((set) => ({
         } : r),
         doors: data.floorId
             ? state.doors.map((door) => door.roomId === id ? { ...door, floorId: data.floorId as string } : door)
-            : state.doors
+            : state.doors,
+        windows: data.floorId
+            ? state.windows.map((window) => window.roomId === id ? { ...window, floorId: data.floorId as string } : window)
+            : state.windows
     })),
 
     addFurniture: (item) => set((state) => withHistory(state, {
@@ -419,7 +442,10 @@ export const useStore = create<AppState>()(persist((set) => ({
         walls: state.walls.map(w => w.id === id ? { ...w, ...data } : w),
         doors: data.floorId
             ? state.doors.map((door) => door.wallId === id ? { ...door, floorId: data.floorId as string } : door)
-            : state.doors
+            : state.doors,
+        windows: data.floorId
+            ? state.windows.map((window) => window.wallId === id ? { ...window, floorId: data.floorId as string } : window)
+            : state.windows
     })),
 
     addDoor: (door) => set((state) => {
@@ -440,6 +466,26 @@ export const useStore = create<AppState>()(persist((set) => ({
     }),
     updateDoor: (id, data) => set((state) => withHistory(state, {
         doors: state.doors.map(d => d.id === id ? { ...d, ...data } : d)
+    })),
+
+    addWindow: (window) => set((state) => {
+        const parentWall = window.wallId ? state.walls.find((wall) => wall.id === window.wallId) : null;
+        const parentRoom = window.roomId ? state.rooms.find((room) => room.id === window.roomId) : null;
+        const hostKind: DoorHostKind = window.hostKind || (window.roomId ? 'room' : 'wall');
+        return withHistory(state, {
+            windows: [
+                ...state.windows,
+                {
+                    ...window,
+                    hostKind,
+                    floorId: window.floorId || parentWall?.floorId || parentRoom?.floorId || state.activeFloorId,
+                    id: generateId()
+                }
+            ]
+        });
+    }),
+    updateWindow: (id, data) => set((state) => withHistory(state, {
+        windows: state.windows.map((window) => window.id === id ? { ...window, ...data } : window)
     })),
 
     addCylinder: (cylinder) => set((state) => withHistory(state, {
@@ -535,13 +581,16 @@ export const useStore = create<AppState>()(persist((set) => ({
             case 'room':
                 nextState.rooms = state.rooms.filter(i => i.id !== id);
                 nextState.doors = state.doors.filter((door) => door.roomId !== id);
+                nextState.windows = state.windows.filter((window) => window.roomId !== id);
                 break;
             case 'furniture': nextState.furniture = state.furniture.filter(i => i.id !== id); break;
             case 'wall':
                 nextState.walls = state.walls.filter(i => i.id !== id);
                 nextState.doors = state.doors.filter((door) => door.wallId !== id);
+                nextState.windows = state.windows.filter((window) => window.wallId !== id);
                 break;
             case 'door': nextState.doors = state.doors.filter(i => i.id !== id); break;
+            case 'window': nextState.windows = state.windows.filter(i => i.id !== id); break;
             case 'cylinder': nextState.cylinders = state.cylinders.filter(i => i.id !== id); break;
             case 'surface': nextState.surfaces = state.surfaces.filter(i => i.id !== id); break;
             case 'stair': nextState.stairs = state.stairs.filter(i => i.id !== id); break;
@@ -560,6 +609,7 @@ export const useStore = create<AppState>()(persist((set) => ({
         furniture: state.furniture,
         walls: state.walls,
         doors: state.doors,
+        windows: state.windows,
         cylinders: state.cylinders,
         surfaces: state.surfaces,
         stairs: state.stairs,

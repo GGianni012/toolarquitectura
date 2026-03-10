@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { useStore, InteractMode, defaultLayerSettings } from '../store/useStore';
-import { Square, Circle, DoorOpen, MousePointer2, PenTool, Hexagon, Layers3, Plus, Eye, EyeOff, Upload, ArrowUpDown, RotateCw, Ruler } from 'lucide-react';
+import { Square, Circle, DoorOpen, AppWindow, MousePointer2, PenTool, Hexagon, Layers3, Plus, Eye, EyeOff, Upload, ArrowUpDown, RotateCw, Ruler } from 'lucide-react';
 import { importReferenceFile } from '../utils/referenceImport';
 import { autoTraceReference } from '../utils/autoTraceReference';
 import { FURNITURE_PRESETS } from '../utils/furnitureCatalog';
@@ -113,6 +113,18 @@ export default function Sidebar() {
         }
 
         setInteractMode('place_door');
+    };
+
+    const handleAddWindow = () => {
+        const floorRooms = rooms.filter((room) => room.floorId === activeFloorId);
+        const floorWalls = walls.filter((wall) => wall.floorId === activeFloorId);
+
+        if (floorWalls.length === 0 && floorRooms.length === 0) {
+            alert('Create a room or draw a wall first, then click the window tool and place it on an edge.');
+            return;
+        }
+
+        setInteractMode('place_window');
     };
 
     const handleAddStair = (kind: 'straight' | 'spiral' = 'straight') => {
@@ -305,6 +317,7 @@ export default function Sidebar() {
                         { key: 'rooms', label: 'Rooms' },
                         { key: 'walls', label: 'Walls' },
                         { key: 'doors', label: 'Doors' },
+                        { key: 'windows', label: 'Windows' },
                         { key: 'furniture', label: 'Furniture' },
                         { key: 'cylinders', label: 'Cylinders' },
                         { key: 'surfaces', label: 'Surfaces' },
@@ -388,6 +401,13 @@ export default function Sidebar() {
                     >
                         <DoorOpen size={24} />
                         <span>Door</span>
+                    </div>
+                    <div
+                        className={`tool-card ${interactMode === 'place_window' ? 'active' : ''}`}
+                        onClick={handleAddWindow}
+                    >
+                        <AppWindow size={24} />
+                        <span>Window</span>
                     </div>
                     <div
                         className="tool-card"

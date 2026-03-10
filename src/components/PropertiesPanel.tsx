@@ -9,7 +9,7 @@ import { clampSpiralCoreRadius, getStairKind } from '../utils/stairUtils';
 import './PropertiesPanel.css';
 
 const PLAN_UNIT_IN_METERS = 0.5;
-type LockedElementSummary = { id: string; type: 'room' | 'furniture' | 'wall' | 'door' | 'cylinder' | 'surface' | 'stair' | 'ruler'; label: string };
+type LockedElementSummary = { id: string; type: 'room' | 'furniture' | 'wall' | 'door' | 'window' | 'cylinder' | 'surface' | 'stair' | 'ruler'; label: string };
 
 function formatMeters(value: number) {
     const decimals = Math.abs(value) >= 10 ? 1 : 2;
@@ -71,9 +71,9 @@ export default function PropertiesPanel() {
         setSelectedElement,
         floors,
         activeFloorId,
-        rooms, furniture, walls, doors, cylinders, surfaces, stairs, rulers,
+        rooms, furniture, walls, doors, windows, cylinders, surfaces, stairs, rulers,
         updateFloor,
-        updateRoom, updateFurniture, updateWall, updateDoor, updateCylinder, updateSurface, updateStair, updateRuler,
+        updateRoom, updateFurniture, updateWall, updateDoor, updateWindow, updateCylinder, updateSurface, updateStair, updateRuler,
         removeElement
     } = useStore();
     const [panelOffset, setPanelOffset] = useState({ x: 0, y: 0 });
@@ -128,6 +128,9 @@ export default function PropertiesPanel() {
             ...doors
                 .filter((door) => door.floorId === activeFloor.id && door.locked)
                 .map((door) => ({ id: door.id, type: 'door' as const, label: door.name || 'Locked door' })),
+            ...windows
+                .filter((window) => window.floorId === activeFloor.id && window.locked)
+                .map((window) => ({ id: window.id, type: 'window' as const, label: window.name || 'Locked window' })),
             ...cylinders
                 .filter((cylinder) => cylinder.floorId === activeFloor.id && cylinder.locked)
                 .map((cylinder) => ({ id: cylinder.id, type: 'cylinder' as const, label: cylinder.name || 'Locked cylinder' })),
@@ -154,6 +157,9 @@ export default function PropertiesPanel() {
                     break;
                 case 'door':
                     updateDoor(lockedElement.id, { locked: false });
+                    break;
+                case 'window':
+                    updateWindow(lockedElement.id, { locked: false });
                     break;
                 case 'cylinder':
                     updateCylinder(lockedElement.id, { locked: false });
@@ -415,6 +421,7 @@ export default function PropertiesPanel() {
         case 'furniture': element = furniture.find(f => f.id === id); updateFn = updateFurniture; break;
         case 'wall': element = walls.find(w => w.id === id); updateFn = updateWall; break;
         case 'door': element = doors.find(d => d.id === id); updateFn = updateDoor; break;
+        case 'window': element = windows.find(w => w.id === id); updateFn = updateWindow; break;
         case 'cylinder': element = cylinders.find(c => c.id === id); updateFn = updateCylinder; break;
         case 'surface': element = surfaces.find(s => s.id === id); updateFn = updateSurface; break;
         case 'stair': element = stairs.find(s => s.id === id); updateFn = updateStair; break;
@@ -428,7 +435,7 @@ export default function PropertiesPanel() {
     };
 
     const canMoveBetweenFloors = type === 'room' || type === 'furniture' || type === 'cylinder' || type === 'surface' || type === 'stair' || type === 'ruler';
-    const doorHostLabel = type === 'door'
+    const openingHostLabel = (type === 'door' || type === 'window')
         ? (element.roomId
             ? (() => {
                 const room = rooms.find((roomItem) => roomItem.id === element.roomId);
@@ -472,7 +479,14 @@ export default function PropertiesPanel() {
                 return [
                     { label: 'Width', value: formatMeters(element.width) },
                     { label: 'Height', value: formatMeters(element.doorHeight || 2.1) },
-                    { label: 'Host', value: doorHostLabel || 'Wall' }
+                    { label: 'Host', value: openingHostLabel || 'Wall' }
+                ];
+            case 'window':
+                return [
+                    { label: 'Width', value: formatMeters(element.width) },
+                    { label: 'Height', value: formatMeters(element.windowHeight || 1.2) },
+                    { label: 'Sill', value: formatMeters(element.sillHeight || 0.9) },
+                    { label: 'Host', value: openingHostLabel || 'Wall' }
                 ];
             case 'furniture':
                 return [
@@ -839,7 +853,7 @@ export default function PropertiesPanel() {
                         <div className="property-row stacked">
                             <label>Attached To</label>
                             <div className="property-chip">
-                                {doorHostLabel}
+                                {openingHostLabel}
                             </div>
                         </div>
                         <div className="property-row">
@@ -860,6 +874,56 @@ export default function PropertiesPanel() {
                                 min="1.6"
                                 value={element.doorHeight || 2.1}
                                 onChange={(e) => handleChange('doorHeight', parseFloat(e.target.value) || 2.1)}
+                            />
+                        </div>
+                        <div className="property-row">
+                            <label>Position Setup (%)</label>
+                            <input
+                                type="range"
+                                min="0" max="1" step="0.01"
+                                value={element.ratio || 0.5}
+                                onChange={(e) => handleChange('ratio', parseFloat(e.target.value))}
+                            />
+                        </div>
+                    </>
+                )}
+
+                {type === 'window' && (
+                    <>
+                        <div className="property-row stacked">
+                            <label>Attached To</label>
+                            <div className="property-chip">
+                                {openingHostLabel}
+                            </div>
+                        </div>
+                        <div className="property-row">
+                            <label>Width</label>
+                            <input
+                                type="number"
+                                step="0.05"
+                                min="0.2"
+                                value={element.width || 1.2}
+                                onChange={(e) => handleChange('width', parseFloat(e.target.value) || 1.2)}
+                            />
+                        </div>
+                        <div className="property-row">
+                            <label>Height</label>
+                            <input
+                                type="number"
+                                step="0.05"
+                                min="0.3"
+                                value={element.windowHeight || 1.2}
+                                onChange={(e) => handleChange('windowHeight', parseFloat(e.target.value) || 1.2)}
+                            />
+                        </div>
+                        <div className="property-row">
+                            <label>Sill Height</label>
+                            <input
+                                type="number"
+                                step="0.05"
+                                min="0"
+                                value={element.sillHeight || 0.9}
+                                onChange={(e) => handleChange('sillHeight', parseFloat(e.target.value) || 0.9)}
                             />
                         </div>
                         <div className="property-row">
