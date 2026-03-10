@@ -287,6 +287,11 @@ function Room3D({ room, floor, openings = [] }: { room: Room; floor: Floor; open
     const layer = (floor.layerSettings || defaultLayerSettings).rooms;
     if (layer && !layer.visible) return null;
     const rotationRadians = -THREE.MathUtils.degToRad(room.rotation || 0);
+    const roomHeight = room.wallHeight || floor.height || DEFAULT_LEVEL_HEIGHT;
+    const ceilingColor = useMemo(
+        () => new THREE.Color(room.color || '#dddddd').lerp(new THREE.Color('#ffffff'), 0.22),
+        [room.color]
+    );
     const floorPatches = useMemo(
         () => subtractRectHolesFromRect({ x: room.x, y: room.y, width: room.width, height: room.height }, openings),
         [openings, room.height, room.width, room.x, room.y]
@@ -327,6 +332,20 @@ function Room3D({ room, floor, openings = [] }: { room: Room; floor: Floor; open
                         />
                     </mesh>
                 </group>
+                {room.showCeiling && (
+                    <group position={[0, floor.elevation + roomHeight, 0]} rotation={[Math.PI / 2, 0, 0]}>
+                        <mesh receiveShadow castShadow>
+                            <extrudeGeometry args={[polygonShape, { depth: FLOOR_THICKNESS, bevelEnabled: false }]} />
+                            <meshStandardMaterial
+                                color={ceilingColor}
+                                roughness={0.72}
+                                side={THREE.DoubleSide}
+                                transparent={true}
+                                opacity={layer?.opacity ?? 1}
+                            />
+                        </mesh>
+                    </group>
+                )}
             </group>
         );
     }
@@ -349,6 +368,24 @@ function Room3D({ room, floor, openings = [] }: { room: Room; floor: Floor; open
                     opacity={layer?.opacity ?? 1}
                 />
             </Box>
+                </group>
+            ))}
+            {room.showCeiling && (canUseOpenings ? floorPatches : [{ x: room.x, y: room.y, width: room.width, height: room.height }]).map((patch, index) => (
+                <group
+                    key={`${room.id}-ceiling-${index}`}
+                    position={[patch.x + patch.width / 2, floor.elevation + roomHeight - FLOOR_THICKNESS / 2, patch.y + patch.height / 2]}
+                    rotation={[0, canUseOpenings ? 0 : rotationRadians, 0]}
+                    raycast={room.locked ? ignoreLockedRaycast : undefined}
+                    onClick={handleSelect}
+                >
+                    <Box args={[patch.width, FLOOR_THICKNESS, patch.height]} castShadow receiveShadow>
+                        <meshStandardMaterial
+                            color={ceilingColor}
+                            roughness={0.72}
+                            transparent={true}
+                            opacity={layer?.opacity ?? 1}
+                        />
+                    </Box>
                 </group>
             ))}
         </>
@@ -584,6 +621,29 @@ function Furniture3D({ item, floor }: { item: Furniture; floor: Floor }) {
                     <CylinderShape args={[width * 0.46, width * 0.18, height * 0.72, 18]} position={[0, height * 0.08, 0]} castShadow receiveShadow>
                         <meshStandardMaterial color={color} roughness={0.72} />
                     </CylinderShape>
+                </>
+            )}
+
+            {item.type === 'cinema_screen' && (
+                <>
+                    <Box args={[width, height * 0.68, Math.max(depth * 0.22, 0.04)]} position={[0, height * 0.12, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color="#1f2732" roughness={0.44} metalness={0.08} transparent={opacity < 1} opacity={opacity} />
+                    </Box>
+                    <Box args={[width * 0.9, height * 0.56, Math.max(depth * 0.1, 0.03)]} position={[0, height * 0.12, depth * 0.02]} castShadow receiveShadow>
+                        <meshStandardMaterial color={color} emissive="#bcd8f8" emissiveIntensity={0.28} roughness={0.24} transparent={opacity < 1} opacity={opacity} />
+                    </Box>
+                    <Box args={[width * 0.05, height * 0.24, Math.max(depth * 0.12, 0.04)]} position={[0, -height * 0.24, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color="#d1dae2" roughness={0.34} metalness={0.22} transparent={opacity < 1} opacity={opacity} />
+                    </Box>
+                    <Box args={[width * 0.38, height * 0.05, depth * 0.7]} position={[0, -height * 0.36, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color="#677280" roughness={0.46} metalness={0.12} transparent={opacity < 1} opacity={opacity} />
+                    </Box>
+                    <Box args={[width * 0.12, height * 0.04, depth * 0.82]} position={[-width * 0.34, -height * 0.4, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color="#59626d" roughness={0.48} metalness={0.14} transparent={opacity < 1} opacity={opacity} />
+                    </Box>
+                    <Box args={[width * 0.12, height * 0.04, depth * 0.82]} position={[width * 0.34, -height * 0.4, 0]} castShadow receiveShadow>
+                        <meshStandardMaterial color="#59626d" roughness={0.48} metalness={0.14} transparent={opacity < 1} opacity={opacity} />
+                    </Box>
                 </>
             )}
 

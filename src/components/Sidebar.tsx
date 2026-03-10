@@ -4,6 +4,7 @@ import { Square, Circle, DoorOpen, MousePointer2, PenTool, Hexagon, Layers3, Plu
 import { importReferenceFile } from '../utils/referenceImport';
 import { autoTraceReference } from '../utils/autoTraceReference';
 import { FURNITURE_PRESETS } from '../utils/furnitureCatalog';
+import { resolvePreferredStairTargetFloorId } from '../utils/stairUtils';
 import './Sidebar.css';
 
 function getFurnitureGlyph(type: string) {
@@ -30,6 +31,7 @@ function getFurnitureGlyph(type: string) {
         case 'bakery_rack': return 'BR';
         case 'salad_bar': return 'SB';
         case 'beer_tap': return 'TP';
+        case 'cinema_screen': return 'SC';
         default: return 'FM';
     }
 }
@@ -61,8 +63,8 @@ export default function Sidebar() {
     );
 
     const getDefaultTargetFloor = () => {
-        const activeIndex = sortedFloors.findIndex((floor) => floor.id === activeFloorId);
-        return sortedFloors[activeIndex + 1] || sortedFloors[activeIndex - 1] || null;
+        const targetFloorId = resolvePreferredStairTargetFloorId(sortedFloors, activeFloorId);
+        return sortedFloors.find((floor) => floor.id === targetFloorId) || null;
     };
 
     const buildStairPayload = (kind: 'straight' | 'spiral') => {
@@ -338,8 +340,8 @@ export default function Sidebar() {
                     <div
                         className="tool-card"
                         draggable
-                        onDragStart={(e) => handleDragStart(e, 'room', { width: 3, height: 3, rotation: 0, hiddenWallEdges: [], name: 'New Room', color: '#ffb8b8', wallHeight: 3 })}
-                        onClick={() => addRoom({ x: 2, y: 2, width: 3, height: 3, rotation: 0, hiddenWallEdges: [], name: 'New Room', color: '#ffb8b8', wallHeight: 3 })}
+                        onDragStart={(e) => handleDragStart(e, 'room', { width: 3, height: 3, rotation: 0, hiddenWallEdges: [], showCeiling: false, name: 'New Room', color: '#ffb8b8', wallHeight: 3 })}
+                        onClick={() => addRoom({ x: 2, y: 2, width: 3, height: 3, rotation: 0, hiddenWallEdges: [], showCeiling: false, name: 'New Room', color: '#ffb8b8', wallHeight: 3 })}
                     >
                         <Square size={24} />
                         <span>Room</span>

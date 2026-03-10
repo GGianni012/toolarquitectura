@@ -450,6 +450,7 @@ export default function PropertiesPanel() {
                     { label: 'Rotation', value: `${Math.round(element.rotation || 0)}°` },
                     { label: 'Points', value: `${element.points?.length || 4}` },
                     { label: 'Walls', value: `${visibleWallsCount}/${edgeCount}` },
+                    { label: 'Ceiling', value: element.showCeiling ? 'On' : 'Off' },
                     { label: 'Area', value: `${(roomMetrics ? roomMetrics.area : (element.width * element.height * PLAN_UNIT_IN_METERS * PLAN_UNIT_IN_METERS)).toFixed(2).replace(/\.?0+$/, '')}m²` }
                 ];
             case 'wall':
@@ -672,6 +673,15 @@ export default function PropertiesPanel() {
                                     );
                                 })}
                             </div>
+                        </div>
+                        <div className="property-row">
+                            <label>Ceiling / Roof</label>
+                            <button
+                                className={`lock-btn ${element.showCeiling ? '' : 'locked'}`}
+                                onClick={() => handleChange('showCeiling', !element.showCeiling)}
+                            >
+                                {element.showCeiling ? 'Enabled' : 'Disabled'}
+                            </button>
                         </div>
                     </>
                 )}

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { getStairDefaults } from '../utils/stairUtils';
+import { getStairDefaults, resolvePreferredStairTargetFloorId } from '../utils/stairUtils';
 
 export type Mode = '2D' | '3D';
 export type ElementType = 'room' | 'furniture' | 'wall' | 'door' | 'cylinder' | 'surface' | 'stair';
@@ -32,7 +32,8 @@ export type FurnitureType =
     | 'espresso_station'
     | 'bakery_rack'
     | 'salad_bar'
-    | 'beer_tap';
+    | 'beer_tap'
+    | 'cinema_screen';
 
 export interface BaseElement {
     id: string;
@@ -85,6 +86,7 @@ export interface Room extends PositionedElement {
     rotation?: number;
     points?: { x: number; y: number }[];
     showWalls?: boolean;
+    showCeiling?: boolean;
     hiddenWallEdges?: number[];
     wallHeight?: number;
 }
@@ -275,7 +277,7 @@ export const useStore = create<AppState>()(persist((set) => ({
     activeFloorId: initialFloorId,
 
     rooms: [
-        { id: '1', floorId: initialFloorId, x: 2, y: 2, width: 4, height: 3, rotation: 0, showWalls: true, hiddenWallEdges: [], name: 'Living Room', color: '#88ccff', wallHeight: 3 }
+        { id: '1', floorId: initialFloorId, x: 2, y: 2, width: 4, height: 3, rotation: 0, showWalls: true, showCeiling: false, hiddenWallEdges: [], name: 'Living Room', color: '#88ccff', wallHeight: 3 }
     ],
     furniture: [
         { id: 'f1', floorId: initialFloorId, type: 'sofa', x: 3, y: 3, rotation: 0 }
@@ -365,6 +367,7 @@ export const useStore = create<AppState>()(persist((set) => ({
             ...room,
             rotation: room.rotation ?? 0,
             showWalls: room.showWalls ?? true,
+            showCeiling: room.showCeiling ?? false,
             hiddenWallEdges: room.hiddenWallEdges ?? [],
             floorId: room.floorId || state.activeFloorId,
             id: generateId()
@@ -376,6 +379,7 @@ export const useStore = create<AppState>()(persist((set) => ({
             ...data,
             rotation: data.rotation ?? r.rotation ?? 0,
             showWalls: data.showWalls ?? r.showWalls ?? true,
+            showCeiling: data.showCeiling ?? r.showCeiling ?? false,
             hiddenWallEdges: data.hiddenWallEdges ?? r.hiddenWallEdges ?? []
         } : r),
         doors: data.floorId
@@ -434,20 +438,27 @@ export const useStore = create<AppState>()(persist((set) => ({
         surfaces: state.surfaces.map(s => s.id === id ? { ...s, ...data } : s)
     })),
 
-    addStair: (stair) => set((state) => withHistory(state, {
-        stairs: [...state.stairs, {
-            ...stair,
-            ...getStairDefaults(stair),
-            floorId: stair.floorId || state.activeFloorId,
-            id: generateId()
-        }]
-    })),
+    addStair: (stair) => set((state) => {
+        const floorId = stair.floorId || state.activeFloorId;
+        const targetFloorId = resolvePreferredStairTargetFloorId(state.floors, floorId, stair.targetFloorId);
+        return withHistory(state, {
+            stairs: [...state.stairs, {
+                ...stair,
+                targetFloorId: targetFloorId || stair.targetFloorId,
+                ...getStairDefaults(stair),
+                floorId,
+                id: generateId()
+            }]
+        });
+    }),
     updateStair: (id, data) => set((state) => withHistory(state, {
         stairs: state.stairs.map((s) => {
             if (s.id !== id) return s;
             const next = { ...s, ...data };
+            const targetFloorId = resolvePreferredStairTargetFloorId(state.floors, next.floorId, next.targetFloorId);
             return {
                 ...next,
+                targetFloorId: targetFloorId || next.targetFloorId,
                 ...getStairDefaults(next)
             };
         })
@@ -460,6 +471,7 @@ export const useStore = create<AppState>()(persist((set) => ({
                 ...room,
                 rotation: room.rotation ?? 0,
                 showWalls: room.showWalls ?? true,
+                showCeiling: room.showCeiling ?? false,
                 hiddenWallEdges: room.hiddenWallEdges ?? [],
                 floorId,
                 id: generateId()

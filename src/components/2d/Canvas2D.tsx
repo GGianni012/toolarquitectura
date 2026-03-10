@@ -17,7 +17,7 @@ import {
 } from '../../utils/buildingGeometry';
 import { getFurniturePreset } from '../../utils/furnitureCatalog';
 import { getReferenceRotatedSize, normalizeReferenceRotation } from '../../utils/referenceTransforms';
-import { clampSpiralCoreRadius, getStairKind } from '../../utils/stairUtils';
+import { clampSpiralCoreRadius, getStairKind, resolvePreferredStairTargetFloorId } from '../../utils/stairUtils';
 import './Canvas2D.css';
 
 const GRID_SIZE = 50;
@@ -1024,6 +1024,17 @@ function FurnitureElement({
                         <circle cx="36" cy="50" r="14" fill="#4fb86b" />
                         <circle cx="64" cy="50" r="14" fill="#4fb86b" />
                         <rect x="38" y="62" width="24" height="18" rx="6" fill="#8a6042" />
+                    </svg>
+                );
+            case 'cinema_screen':
+                return (
+                    <svg viewBox="0 0 100 100" className="furniture-svg">
+                        <rect x="10" y="22" width="80" height="18" rx="8" fill="#2a313d" />
+                        <rect x="16" y="28" width="68" height="6" rx="3" fill="#f7fbff" />
+                        <rect x="46" y="40" width="8" height="18" rx="4" fill="#c5d0db" />
+                        <rect x="30" y="58" width="40" height="8" rx="4" fill="#7b8794" />
+                        <rect x="18" y="68" width="14" height="8" rx="4" fill="#66707d" />
+                        <rect x="68" y="68" width="14" height="8" rx="4" fill="#66707d" />
                     </svg>
                 );
             case 'dining_table':
@@ -2033,9 +2044,7 @@ export default function Canvas2D() {
     }, [activeFloorId, cylinders, floors, resolvedDoors, rooms, stairOpeningsByFloor, stairs, surfaces, walls]);
 
     const defaultTargetFloorId = useMemo(() => {
-        const sortedFloors = [...floors].sort((a, b) => a.elevation - b.elevation);
-        const activeIndex = sortedFloors.findIndex((floor) => floor.id === activeFloorId);
-        return sortedFloors[activeIndex + 1]?.id || sortedFloors[activeIndex - 1]?.id || null;
+        return resolvePreferredStairTargetFloorId(floors, activeFloorId);
     }, [activeFloorId, floors]);
 
     const clearTransientState = () => {
@@ -2161,6 +2170,7 @@ export default function Canvas2D() {
                     points: drawingSurface.points,
                     rotation: 0,
                     hiddenWallEdges: [],
+                    showCeiling: false,
                     wallHeight: 3,
                     name: `Room ${visibleRooms.length + 1}`,
                     color: '#ffb8b8'

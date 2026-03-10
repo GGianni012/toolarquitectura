@@ -14,6 +14,7 @@ export const FURNITURE_PRESETS: FurniturePreset[] = [
     { type: 'sofa', name: 'Sofa', width: 2, depth: 0.9, height: 0.75, color: '#ff8f7a', category: 'living' },
     { type: 'bed', name: 'Bed', width: 1.6, depth: 2, height: 0.55, color: '#8cc7ff', category: 'living' },
     { type: 'plant', name: 'Plant', width: 0.5, depth: 0.5, height: 1.2, color: '#63d37c', category: 'living' },
+    { type: 'cinema_screen', name: 'Cinema Screen', width: 3.4, depth: 0.28, height: 2.1, color: '#f2f5f7', category: 'living' },
     { type: 'dining_table', name: 'Dining Table', width: 1.4, depth: 0.8, height: 0.76, color: '#d9b38c', category: 'gastronomy' },
     { type: 'round_table', name: 'Round Cafe Table', width: 1.1, depth: 1.1, height: 0.76, color: '#ceb08d', category: 'gastronomy' },
     { type: 'dining_chair', name: 'Dining Chair', width: 0.52, depth: 0.52, height: 0.92, color: '#7e8aa6', category: 'gastronomy' },
