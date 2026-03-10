@@ -73,8 +73,8 @@ export default function ControlsGuide() {
                 <div className="controls-guide-row"><kbd>2</kbd><span>Switch to 3D viewer</span></div>
                 <div className="controls-guide-row"><kbd>Esc</kbd><span>{selectedElement ? 'Clear current selection' : 'Close active selection'}</span></div>
                 <div className="controls-guide-row"><kbd>Delete</kbd><span>Remove selected element</span></div>
-                <div className="controls-guide-row"><kbd>Ctrl/Cmd</kbd> + <kbd>C</kbd><span>Copy selected room</span></div>
-                <div className="controls-guide-row"><kbd>Ctrl/Cmd</kbd> + <kbd>V</kbd><span>Paste copied room</span></div>
+                <div className="controls-guide-row"><kbd>Ctrl/Cmd</kbd> + <kbd>C</kbd><span>Copy selected room or furniture</span></div>
+                <div className="controls-guide-row"><kbd>Ctrl/Cmd</kbd> + <kbd>V</kbd><span>Paste copied room or furniture</span></div>
                 <div className="controls-guide-row"><kbd>?</kbd><span>Show or hide this panel</span></div>
             </div>
 

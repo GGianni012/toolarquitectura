@@ -8,9 +8,13 @@ import PropertiesPanel from './components/PropertiesPanel';
 import ControlsGuide from './components/ControlsGuide';
 import './App.css';
 
+type ClipboardPayload =
+    | { type: 'room'; data: any }
+    | { type: 'furniture'; data: any };
+
 function App() {
-    const { mode, selectedElement, rooms, addRoom, removeElement, setSelectedElement } = useStore();
-    const copiedRoomRef = useRef<any>(null);
+    const { mode, selectedElement, activeFloorId, rooms, furniture, addRoom, addFurniture, removeElement, setSelectedElement } = useStore();
+    const clipboardRef = useRef<ClipboardPayload | null>(null);
 
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
@@ -35,32 +39,65 @@ function App() {
                 return;
             }
 
-            if (event.code === 'KeyC' && selectedElement?.type === 'room') {
-                const room = rooms.find((item) => item.id === selectedElement.id);
-                if (!room) return;
+            if (event.code === 'KeyC' && selectedElement) {
+                if (selectedElement.type === 'room') {
+                    const room = rooms.find((item) => item.id === selectedElement.id);
+                    if (!room) return;
 
-                event.preventDefault();
-                copiedRoomRef.current = structuredClone(room);
-                return;
+                    event.preventDefault();
+                    clipboardRef.current = {
+                        type: 'room',
+                        data: structuredClone(room)
+                    };
+                    return;
+                }
+
+                if (selectedElement.type === 'furniture') {
+                    const item = furniture.find((furnitureItem) => furnitureItem.id === selectedElement.id);
+                    if (!item) return;
+
+                    event.preventDefault();
+                    clipboardRef.current = {
+                        type: 'furniture',
+                        data: structuredClone(item)
+                    };
+                }
             }
 
-            if (event.code === 'KeyV' && copiedRoomRef.current) {
+            if (event.code === 'KeyV' && clipboardRef.current) {
                 event.preventDefault();
-                const room = copiedRoomRef.current;
-                const offset = 1;
-                addRoom({
-                    ...room,
-                    points: room.points?.map((point: { x: number; y: number }) => ({ x: point.x + offset, y: point.y + offset })),
-                    x: room.x + offset,
-                    y: room.y + offset,
-                    name: room.name ? `${room.name} Copy` : 'Room Copy'
-                });
+                const offset = 0.8;
+
+                if (clipboardRef.current.type === 'room') {
+                    const room = clipboardRef.current.data;
+                    addRoom({
+                        ...room,
+                        floorId: activeFloorId,
+                        points: room.points?.map((point: { x: number; y: number }) => ({ x: point.x + offset, y: point.y + offset })),
+                        x: room.x + offset,
+                        y: room.y + offset,
+                        name: room.name ? `${room.name} Copy` : 'Room Copy'
+                    });
+                    return;
+                }
+
+                if (clipboardRef.current.type === 'furniture') {
+                    const item = clipboardRef.current.data;
+                    addFurniture({
+                        ...item,
+                        floorId: activeFloorId,
+                        roomId: item.floorId === activeFloorId ? item.roomId : undefined,
+                        x: item.x + offset,
+                        y: item.y + offset,
+                        name: item.name ? `${item.name} Copy` : 'Furniture Copy'
+                    });
+                }
             }
         };
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [addRoom, removeElement, rooms, selectedElement, setSelectedElement]);
+    }, [activeFloorId, addFurniture, addRoom, furniture, removeElement, rooms, selectedElement, setSelectedElement]);
 
     return (
         <div className="app-container">
