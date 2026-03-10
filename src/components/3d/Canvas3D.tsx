@@ -1,4 +1,4 @@
-import { useStore, Room, Furniture, Wall, Cylinder, Door, Surface, Floor, Stair, defaultLayerSettings } from '../../store/useStore';
+import { useStore, Room, Furniture, Wall, Cylinder, Door, Surface, Floor, Stair, Ruler, defaultLayerSettings } from '../../store/useStore';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Environment, ContactShadows, Box, Plane, Cylinder as CylinderShape } from '@react-three/drei';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -184,7 +184,8 @@ function buildSceneBounds(
     cylinders: Cylinder[],
     furniture: Furniture[],
     surfaces: Surface[],
-    stairs: Stair[]
+    stairs: Stair[],
+    rulers: Ruler[]
 ) {
     const floorMap = new Map(visibleFloors.map((floor) => [floor.id, floor]));
     const bounds = new THREE.Box3();
@@ -271,6 +272,16 @@ function buildSceneBounds(
         expand(
             new THREE.Vector3(stair.x, Math.min(floor.elevation, targetFloor.elevation), stair.y),
             new THREE.Vector3(stair.x + stair.width, Math.max(floor.elevation, targetFloor.elevation) + floor.height, stair.y + stair.height)
+        );
+    });
+
+    rulers.forEach((ruler) => {
+        const floor = floorMap.get(ruler.floorId);
+        if (!floor) return;
+
+        expand(
+            new THREE.Vector3(Math.min(ruler.startX, ruler.endX), floor.elevation, Math.min(ruler.startY, ruler.endY)),
+            new THREE.Vector3(Math.max(ruler.startX, ruler.endX), floor.elevation + 0.12, Math.max(ruler.startY, ruler.endY))
         );
     });
 
@@ -1036,6 +1047,46 @@ function Surface3D({ surface, floor }: { surface: Surface; floor: Floor }) {
     );
 }
 
+function Ruler3D({ ruler, floor }: { ruler: Ruler; floor: Floor }) {
+    const { setActiveFloor, setSelectedElement } = useStore();
+    const layer = (floor.layerSettings || defaultLayerSettings).rulers;
+    if (layer && !layer.visible) return null;
+
+    const dx = ruler.endX - ruler.startX;
+    const dz = ruler.endY - ruler.startY;
+    const length = Math.hypot(dx, dz);
+    if (length <= 0.001) return null;
+
+    return (
+        <group
+            position={[(ruler.startX + ruler.endX) / 2, floor.elevation + 0.04, (ruler.startY + ruler.endY) / 2]}
+            rotation={[0, -Math.atan2(dz, dx), 0]}
+            raycast={ruler.locked ? ignoreLockedRaycast : undefined}
+            onClick={(event) => {
+                event.stopPropagation();
+                setActiveFloor(ruler.floorId);
+                setSelectedElement({ id: ruler.id, type: 'ruler' });
+            }}
+        >
+            <Box args={[length, 0.028, 0.06]} castShadow receiveShadow>
+                <meshStandardMaterial
+                    color={ruler.color || '#7dd3fc'}
+                    emissive={ruler.color || '#7dd3fc'}
+                    emissiveIntensity={0.18}
+                    transparent={layer?.opacity !== undefined ? layer.opacity < 1 : false}
+                    opacity={layer?.opacity ?? 1}
+                />
+            </Box>
+            <Box args={[0.08, 0.08, 0.08]} position={[-length / 2, 0, 0]} castShadow receiveShadow>
+                <meshStandardMaterial color="#e8f3ff" transparent={layer?.opacity !== undefined ? layer.opacity < 1 : false} opacity={layer?.opacity ?? 1} />
+            </Box>
+            <Box args={[0.08, 0.08, 0.08]} position={[length / 2, 0, 0]} castShadow receiveShadow>
+                <meshStandardMaterial color="#e8f3ff" transparent={layer?.opacity !== undefined ? layer.opacity < 1 : false} opacity={layer?.opacity ?? 1} />
+            </Box>
+        </group>
+    );
+}
+
 function Stair3D({ stair, floor, targetFloor }: { stair: Stair; floor: Floor; targetFloor: Floor }) {
     const { setActiveFloor, setSelectedElement } = useStore();
     const elevationDelta = targetFloor.elevation - floor.elevation;
@@ -1291,7 +1342,7 @@ function SceneNavigation({
 }
 
 export default function Canvas3D() {
-    const { floors, rooms, furniture, walls, cylinders, doors, surfaces, stairs, activeFloorId, setActiveFloor, setVisibleFloors, setSelectedElement } = useStore();
+    const { floors, rooms, furniture, walls, cylinders, doors, surfaces, stairs, rulers, activeFloorId, setActiveFloor, setVisibleFloors, setSelectedElement } = useStore();
     const [fitRequestToken, setFitRequestToken] = useState(0);
     const controlsRef = useRef<OrbitControlsImpl>(null);
 
@@ -1312,6 +1363,7 @@ export default function Canvas3D() {
     const visibleFurniture = furniture.filter((item) => floorMap.has(item.floorId));
     const visibleSurfaces = surfaces.filter((surface) => floorMap.has(surface.floorId));
     const visibleStairs = stairs.filter((stair) => floorMap.has(stair.floorId) && floorMap.has(stair.targetFloorId));
+    const visibleRulers = rulers.filter((ruler) => floorMap.has(ruler.floorId));
     const lockedRoomIds = useMemo(
         () => new Set(visibleRooms.filter((room) => room.locked).map((room) => room.id)),
         [visibleRooms]
@@ -1454,8 +1506,8 @@ export default function Canvas3D() {
     );
 
     const sceneBounds = useMemo(
-        () => buildSceneBounds(visibleFloors, visibleRooms, visibleWalls, visibleCylinders, visibleFurniture, visibleSurfaces, visibleStairs),
-        [visibleFloors, visibleRooms, visibleWalls, visibleCylinders, visibleFurniture, visibleSurfaces, visibleStairs]
+        () => buildSceneBounds(visibleFloors, visibleRooms, visibleWalls, visibleCylinders, visibleFurniture, visibleSurfaces, visibleStairs, visibleRulers),
+        [visibleFloors, visibleRooms, visibleWalls, visibleCylinders, visibleFurniture, visibleSurfaces, visibleStairs, visibleRulers]
     );
     const sceneCenter = useMemo(() => sceneBounds.getCenter(new THREE.Vector3()), [sceneBounds]);
     const sceneSize = useMemo(() => sceneBounds.getSize(new THREE.Vector3()), [sceneBounds]);
@@ -1605,6 +1657,11 @@ export default function Canvas3D() {
                 {visibleSurfaces.map((surface) => {
                     const floor = floorMap.get(surface.floorId);
                     return floor ? <Surface3D key={surface.id} surface={surface} floor={floor} /> : null;
+                })}
+
+                {visibleRulers.map((ruler) => {
+                    const floor = floorMap.get(ruler.floorId);
+                    return floor ? <Ruler3D key={ruler.id} ruler={ruler} floor={floor} /> : null;
                 })}
 
                 {visibleStairs.map((stair) => {

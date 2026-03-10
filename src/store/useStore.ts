@@ -3,7 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { getStairDefaults, resolvePreferredStairTargetFloorId } from '../utils/stairUtils';
 
 export type Mode = '2D' | '3D';
-export type ElementType = 'room' | 'furniture' | 'wall' | 'door' | 'cylinder' | 'surface' | 'stair';
+export type ElementType = 'room' | 'furniture' | 'wall' | 'door' | 'cylinder' | 'surface' | 'stair' | 'ruler';
 export type OpenSide = 'north' | 'south' | 'east' | 'west' | 'none';
 export type RoomEdge = Exclude<OpenSide, 'none'>;
 export type StairDirection = Exclude<OpenSide, 'none'>;
@@ -70,7 +70,7 @@ export interface FloorReference {
     flipY?: boolean;
 }
 
-export type LayerKey = 'rooms' | 'walls' | 'doors' | 'furniture' | 'cylinders' | 'surfaces' | 'stairs' | 'reference';
+export type LayerKey = 'rooms' | 'walls' | 'doors' | 'furniture' | 'cylinders' | 'surfaces' | 'stairs' | 'rulers' | 'reference';
 
 export type LayerSettings = Record<LayerKey, { visible: boolean; opacity: number }>;
 
@@ -151,6 +151,13 @@ export interface Stair extends PositionedElement {
     coreRadius?: number;
 }
 
+export interface Ruler extends PositionedElement {
+    startX: number;
+    startY: number;
+    endX: number;
+    endY: number;
+}
+
 export type InteractMode = 'select' | 'draw_wall' | 'draw_surface' | 'place_door' | 'place_cylinder';
 
 type HistorySnapshot = Pick<AppState,
@@ -163,6 +170,7 @@ type HistorySnapshot = Pick<AppState,
     | 'cylinders'
     | 'surfaces'
     | 'stairs'
+    | 'rulers'
 >;
 
 interface AppState {
@@ -179,6 +187,7 @@ interface AppState {
     cylinders: Cylinder[];
     surfaces: Surface[];
     stairs: Stair[];
+    rulers: Ruler[];
     history: HistorySnapshot[];
     canUndo: boolean;
 
@@ -215,6 +224,9 @@ interface AppState {
     addStair: (stair: Omit<Stair, 'id' | 'floorId'> & { floorId?: string }) => void;
     updateStair: (id: string, data: Partial<Stair>) => void;
 
+    addRuler: (ruler: Omit<Ruler, 'id' | 'floorId'> & { floorId?: string }) => void;
+    updateRuler: (id: string, data: Partial<Ruler>) => void;
+
     applyAutoTraceResult: (
         floorId: string,
         data: {
@@ -239,6 +251,7 @@ export const defaultLayerSettings: LayerSettings = {
     cylinders: { visible: true, opacity: 1 },
     surfaces: { visible: true, opacity: 1 },
     stairs: { visible: true, opacity: 1 },
+    rulers: { visible: true, opacity: 1 },
     reference: { visible: true, opacity: 1 }
 };
 
@@ -246,7 +259,7 @@ const initialFloors: Floor[] = [
     { id: initialFloorId, name: 'Ground Floor', elevation: 0, height: 3.2, visible: true, openSide: 'south', reference: null, layerSettings: defaultLayerSettings }
 ];
 
-function createHistorySnapshot(state: Pick<AppState, 'floors' | 'activeFloorId' | 'rooms' | 'furniture' | 'walls' | 'doors' | 'cylinders' | 'surfaces' | 'stairs'>): HistorySnapshot {
+function createHistorySnapshot(state: Pick<AppState, 'floors' | 'activeFloorId' | 'rooms' | 'furniture' | 'walls' | 'doors' | 'cylinders' | 'surfaces' | 'stairs' | 'rulers'>): HistorySnapshot {
     return {
         floors: structuredClone(state.floors),
         activeFloorId: state.activeFloorId,
@@ -256,7 +269,8 @@ function createHistorySnapshot(state: Pick<AppState, 'floors' | 'activeFloorId' 
         doors: structuredClone(state.doors),
         cylinders: structuredClone(state.cylinders),
         surfaces: structuredClone(state.surfaces),
-        stairs: structuredClone(state.stairs)
+        stairs: structuredClone(state.stairs),
+        rulers: structuredClone(state.rulers)
     };
 }
 
@@ -287,6 +301,7 @@ export const useStore = create<AppState>()(persist((set) => ({
     cylinders: [],
     surfaces: [],
     stairs: [],
+    rulers: [],
     history: [],
     canUndo: false,
 
@@ -464,6 +479,17 @@ export const useStore = create<AppState>()(persist((set) => ({
         })
     })),
 
+    addRuler: (ruler) => set((state) => withHistory(state, {
+        rulers: [...state.rulers, {
+            ...ruler,
+            floorId: ruler.floorId || state.activeFloorId,
+            id: generateId()
+        }]
+    })),
+    updateRuler: (id, data) => set((state) => withHistory(state, {
+        rulers: state.rulers.map((ruler) => ruler.id === id ? { ...ruler, ...data } : ruler)
+    })),
+
     applyAutoTraceResult: (floorId, data) => set((state) => withHistory(state, {
         rooms: [
             ...state.rooms,
@@ -515,6 +541,7 @@ export const useStore = create<AppState>()(persist((set) => ({
             case 'cylinder': nextState.cylinders = state.cylinders.filter(i => i.id !== id); break;
             case 'surface': nextState.surfaces = state.surfaces.filter(i => i.id !== id); break;
             case 'stair': nextState.stairs = state.stairs.filter(i => i.id !== id); break;
+            case 'ruler': nextState.rulers = state.rulers.filter(i => i.id !== id); break;
         }
         return withHistory(state, nextState);
     })
@@ -531,6 +558,7 @@ export const useStore = create<AppState>()(persist((set) => ({
         doors: state.doors,
         cylinders: state.cylinders,
         surfaces: state.surfaces,
-        stairs: state.stairs
+        stairs: state.stairs,
+        rulers: state.rulers
     })
 }));

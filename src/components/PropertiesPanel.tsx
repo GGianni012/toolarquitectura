@@ -9,7 +9,7 @@ import { clampSpiralCoreRadius, getStairKind } from '../utils/stairUtils';
 import './PropertiesPanel.css';
 
 const PLAN_UNIT_IN_METERS = 0.5;
-type LockedElementSummary = { id: string; type: 'room' | 'furniture' | 'wall' | 'door' | 'cylinder' | 'surface' | 'stair'; label: string };
+type LockedElementSummary = { id: string; type: 'room' | 'furniture' | 'wall' | 'door' | 'cylinder' | 'surface' | 'stair' | 'ruler'; label: string };
 
 function formatMeters(value: number) {
     const decimals = Math.abs(value) >= 10 ? 1 : 2;
@@ -71,9 +71,9 @@ export default function PropertiesPanel() {
         setSelectedElement,
         floors,
         activeFloorId,
-        rooms, furniture, walls, doors, cylinders, surfaces, stairs,
+        rooms, furniture, walls, doors, cylinders, surfaces, stairs, rulers,
         updateFloor,
-        updateRoom, updateFurniture, updateWall, updateDoor, updateCylinder, updateSurface, updateStair,
+        updateRoom, updateFurniture, updateWall, updateDoor, updateCylinder, updateSurface, updateStair, updateRuler,
         removeElement
     } = useStore();
     const [panelOffset, setPanelOffset] = useState({ x: 0, y: 0 });
@@ -136,7 +136,10 @@ export default function PropertiesPanel() {
                 .map((surface) => ({ id: surface.id, type: 'surface' as const, label: surface.name || 'Locked surface' })),
             ...stairs
                 .filter((stair) => stair.floorId === activeFloor.id && stair.locked)
-                .map((stair) => ({ id: stair.id, type: 'stair' as const, label: stair.name || 'Locked stair' }))
+                .map((stair) => ({ id: stair.id, type: 'stair' as const, label: stair.name || 'Locked stair' })),
+            ...rulers
+                .filter((ruler) => ruler.floorId === activeFloor.id && ruler.locked)
+                .map((ruler) => ({ id: ruler.id, type: 'ruler' as const, label: ruler.name || 'Locked ruler' }))
         ].sort((a, b) => a.label.localeCompare(b.label));
         const unlockLockedElement = (lockedElement: LockedElementSummary) => {
             switch (lockedElement.type) {
@@ -160,6 +163,9 @@ export default function PropertiesPanel() {
                     break;
                 case 'stair':
                     updateStair(lockedElement.id, { locked: false });
+                    break;
+                case 'ruler':
+                    updateRuler(lockedElement.id, { locked: false });
                     break;
                 default:
                     break;
@@ -412,6 +418,7 @@ export default function PropertiesPanel() {
         case 'cylinder': element = cylinders.find(c => c.id === id); updateFn = updateCylinder; break;
         case 'surface': element = surfaces.find(s => s.id === id); updateFn = updateSurface; break;
         case 'stair': element = stairs.find(s => s.id === id); updateFn = updateStair; break;
+        case 'ruler': element = rulers.find(r => r.id === id); updateFn = updateRuler; break;
     }
 
     if (!element || !updateFn) return null;
@@ -420,7 +427,7 @@ export default function PropertiesPanel() {
         updateFn(id, { [field]: value });
     };
 
-    const canMoveBetweenFloors = type === 'room' || type === 'furniture' || type === 'cylinder' || type === 'surface' || type === 'stair';
+    const canMoveBetweenFloors = type === 'room' || type === 'furniture' || type === 'cylinder' || type === 'surface' || type === 'stair' || type === 'ruler';
     const doorHostLabel = type === 'door'
         ? (element.roomId
             ? (() => {
@@ -507,6 +514,12 @@ export default function PropertiesPanel() {
                 }
 
                 return stairRows;
+            case 'ruler':
+                return [
+                    { label: 'Start', value: `${formatPlanMeasure(element.startX)}, ${formatPlanMeasure(element.startY)}` },
+                    { label: 'End', value: `${formatPlanMeasure(element.endX)}, ${formatPlanMeasure(element.endY)}` },
+                    { label: 'Length', value: formatPlanMeasure(Math.hypot(element.endX - element.startX, element.endY - element.startY)) }
+                ];
             default:
                 return [];
         }
@@ -1066,6 +1079,47 @@ export default function PropertiesPanel() {
                                 min="0.05"
                                 value={element.thickness || 0.18}
                                 onChange={(e) => handleChange('thickness', parseFloat(e.target.value) || 0.18)}
+                            />
+                        </div>
+                    </>
+                )}
+
+                {type === 'ruler' && (
+                    <>
+                        <div className="property-row">
+                            <label>Start X</label>
+                            <input
+                                type="number"
+                                step="0.01"
+                                value={element.startX}
+                                onChange={(e) => handleChange('startX', parseFloat(e.target.value) || 0)}
+                            />
+                        </div>
+                        <div className="property-row">
+                            <label>Start Y</label>
+                            <input
+                                type="number"
+                                step="0.01"
+                                value={element.startY}
+                                onChange={(e) => handleChange('startY', parseFloat(e.target.value) || 0)}
+                            />
+                        </div>
+                        <div className="property-row">
+                            <label>End X</label>
+                            <input
+                                type="number"
+                                step="0.01"
+                                value={element.endX}
+                                onChange={(e) => handleChange('endX', parseFloat(e.target.value) || 0)}
+                            />
+                        </div>
+                        <div className="property-row">
+                            <label>End Y</label>
+                            <input
+                                type="number"
+                                step="0.01"
+                                value={element.endY}
+                                onChange={(e) => handleChange('endY', parseFloat(e.target.value) || 0)}
                             />
                         </div>
                     </>

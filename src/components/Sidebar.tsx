@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { useStore, InteractMode, defaultLayerSettings } from '../store/useStore';
-import { Square, Circle, DoorOpen, MousePointer2, PenTool, Hexagon, Layers3, Plus, Eye, EyeOff, Upload, ArrowUpDown, RotateCw } from 'lucide-react';
+import { Square, Circle, DoorOpen, MousePointer2, PenTool, Hexagon, Layers3, Plus, Eye, EyeOff, Upload, ArrowUpDown, RotateCw, Ruler } from 'lucide-react';
 import { importReferenceFile } from '../utils/referenceImport';
 import { autoTraceReference } from '../utils/autoTraceReference';
 import { FURNITURE_PRESETS } from '../utils/furnitureCatalog';
@@ -42,6 +42,7 @@ export default function Sidebar() {
         addFurniture,
         addCylinder,
         addStair,
+        addRuler,
         addFloor,
         updateFloor,
         updateLayerSettings,
@@ -187,7 +188,9 @@ export default function Sidebar() {
     ];
     const livingFurniture = FURNITURE_PRESETS.filter((preset) => preset.category === 'living');
     const gastronomyFurniture = FURNITURE_PRESETS.filter((preset) => preset.category === 'gastronomy');
-    const layerSettings = activeFloor?.layerSettings || defaultLayerSettings;
+    const layerSettings = activeFloor
+        ? { ...defaultLayerSettings, ...(activeFloor.layerSettings || {}) }
+        : defaultLayerSettings;
 
     return (
         <aside className="sidebar glass-panel">
@@ -306,6 +309,7 @@ export default function Sidebar() {
                         { key: 'cylinders', label: 'Cylinders' },
                         { key: 'surfaces', label: 'Surfaces' },
                         { key: 'stairs', label: 'Stairs' },
+                        { key: 'rulers', label: 'Rulers' },
                         { key: 'reference', label: 'Reference' }
                     ] as const).map((layer) => {
                         const state = layerSettings[layer.key];
@@ -354,6 +358,29 @@ export default function Sidebar() {
                     >
                         <Circle size={24} />
                         <span>Cylinder</span>
+                    </div>
+                    <div
+                        className="tool-card"
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, 'ruler', {
+                            startX: 0,
+                            startY: 0,
+                            endX: 4,
+                            endY: 0,
+                            name: 'Ruler',
+                            color: '#7dd3fc'
+                        })}
+                        onClick={() => addRuler({
+                            startX: 2,
+                            startY: 2,
+                            endX: 6,
+                            endY: 2,
+                            name: 'Ruler',
+                            color: '#7dd3fc'
+                        })}
+                    >
+                        <Ruler size={24} />
+                        <span>Ruler</span>
                     </div>
                     <div
                         className={`tool-card ${interactMode === 'place_door' ? 'active' : ''}`}

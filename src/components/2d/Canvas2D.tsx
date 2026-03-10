@@ -1,4 +1,4 @@
-import { useStore, Room, Wall, Furniture, Door, Cylinder, Surface, Stair, FloorReference, defaultLayerSettings } from '../../store/useStore';
+import { useStore, Room, Wall, Furniture, Door, Cylinder, Surface, Stair, Ruler, FloorReference, defaultLayerSettings } from '../../store/useStore';
 import { useDrag } from '@use-gesture/react';
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
@@ -187,7 +187,7 @@ function getRectCenter(rect: Rect2D) {
     };
 }
 
-function getObjectBounds(element: Room | Furniture | Cylinder | Stair | Wall, type: 'room' | 'furniture' | 'cylinder' | 'stair' | 'wall'): Rect2D {
+function getObjectBounds(element: Room | Furniture | Cylinder | Stair | Wall | Ruler, type: 'room' | 'furniture' | 'cylinder' | 'stair' | 'wall' | 'ruler'): Rect2D {
     switch (type) {
         case 'room':
             return getRoomBounds(element as Room);
@@ -226,6 +226,20 @@ function getObjectBounds(element: Room | Furniture | Cylinder | Stair | Wall, ty
             const minY = Math.min(wall.startY, wall.endY);
             const width = Math.abs(wall.endX - wall.startX);
             const height = Math.abs(wall.endY - wall.startY);
+            return {
+                x: width <= minThickness ? minX - minThickness / 2 : minX,
+                y: height <= minThickness ? minY - minThickness / 2 : minY,
+                width: Math.max(width, minThickness),
+                height: Math.max(height, minThickness)
+            };
+        }
+        case 'ruler': {
+            const ruler = element as Ruler;
+            const minThickness = 0.08;
+            const minX = Math.min(ruler.startX, ruler.endX);
+            const minY = Math.min(ruler.startY, ruler.endY);
+            const width = Math.abs(ruler.endX - ruler.startX);
+            const height = Math.abs(ruler.endY - ruler.startY);
             return {
                 x: width <= minThickness ? minX - minThickness / 2 : minX,
                 y: height <= minThickness ? minY - minThickness / 2 : minY,
@@ -766,6 +780,148 @@ function WallElement({
                             const snapped = snapWallPoint(rawPoint, walls, { x: wallObj.startX, y: wallObj.startY }, wallObj.id);
                             setSnapGuides(snapped.guides);
                             updateWall(wallObj.id, { endX: snapped.x, endY: snapped.y });
+                            return memo;
+                        }}
+                    />
+                </>
+            )}
+        </g>
+    );
+}
+
+function RulerElement({
+    ruler,
+    scale,
+    walls,
+    setSnapGuides
+}: {
+    ruler: Ruler;
+    scale: number;
+    walls: Wall[];
+    setSnapGuides: (guides: SnapGuide[]) => void;
+}) {
+    const { interactMode, updateRuler, selectedElement, setSelectedElement, floors } = useStore();
+    const floor = floors.find((item) => item.id === ruler.floorId);
+    const layer = (floor?.layerSettings || defaultLayerSettings).rulers;
+    if (layer && !layer.visible) return null;
+
+    const bind = useDrag(({ movement: [mx, my], first, memo }) => {
+        if (interactMode !== 'select' || ruler.locked) return memo;
+        if (first || !memo) {
+            memo = {
+                startX: ruler.startX,
+                startY: ruler.startY,
+                endX: ruler.endX,
+                endY: ruler.endY
+            };
+        }
+
+        const dx = roundUnit((mx / scale) / GRID_SIZE);
+        const dy = roundUnit((my / scale) / GRID_SIZE);
+        updateRuler(ruler.id, {
+            startX: roundUnit(memo.startX + dx),
+            startY: roundUnit(memo.startY + dy),
+            endX: roundUnit(memo.endX + dx),
+            endY: roundUnit(memo.endY + dy)
+        });
+        setSnapGuides([]);
+        return memo;
+    }, {
+        enabled: interactMode === 'select' && !ruler.locked
+    });
+
+    const isSelected = selectedElement?.id === ruler.id;
+    const x1 = ruler.startX * GRID_SIZE + GRID_SIZE / 2;
+    const y1 = ruler.startY * GRID_SIZE + GRID_SIZE / 2;
+    const x2 = ruler.endX * GRID_SIZE + GRID_SIZE / 2;
+    const y2 = ruler.endY * GRID_SIZE + GRID_SIZE / 2;
+    const midX = (x1 + x2) / 2;
+    const midY = (y1 + y2) / 2;
+    const lengthInUnits = Math.hypot(ruler.endX - ruler.startX, ruler.endY - ruler.startY);
+    const screenLength = lengthInUnits * GRID_SIZE * scale;
+    const bindProps: any = bind();
+
+    return (
+        <g
+            {...bindProps}
+            onPointerDown={(e) => {
+                e.stopPropagation();
+                if (interactMode === 'select') {
+                    setSelectedElement({ id: ruler.id, type: 'ruler' });
+                }
+                bindProps.onPointerDown?.(e);
+            }}
+            style={{ pointerEvents: ruler.locked ? 'none' : 'auto', cursor: ruler.locked ? 'default' : 'grab' }}
+        >
+            <line
+                x1={x1}
+                y1={y1}
+                x2={x2}
+                y2={y2}
+                stroke={isSelected ? '#fca5a5' : (ruler.color || '#7dd3fc')}
+                strokeWidth={isSelected ? 5 : 4}
+                strokeDasharray={`${16 / scale} ${8 / scale}`}
+                strokeLinecap="round"
+                style={{ opacity: layer?.opacity ?? 1, pointerEvents: 'stroke' }}
+            />
+            <line
+                x1={x1}
+                y1={y1}
+                x2={x2}
+                y2={y2}
+                stroke="rgba(255,255,255,0.34)"
+                strokeWidth={1.2 / scale}
+                strokeLinecap="round"
+                style={{ pointerEvents: 'none' }}
+            />
+            <text
+                x={midX}
+                y={midY - getAdaptiveTextSize(scale, 12)}
+                fill="white"
+                fontSize={getAdaptiveTextSize(scale, 12)}
+                fontWeight="700"
+                textAnchor="middle"
+                style={{ pointerEvents: 'none', textShadow: '0px 2px 4px rgba(0,0,0,0.8)' }}
+            >
+                {toMeters(lengthInUnits)}
+            </text>
+            {screenLength > 80 && (
+                <>
+                    <circle cx={x1} cy={y1} r={3.2 / scale} fill="white" style={{ pointerEvents: 'none' }} />
+                    <circle cx={x2} cy={y2} r={3.2 / scale} fill="white" style={{ pointerEvents: 'none' }} />
+                </>
+            )}
+            {isSelected && !ruler.locked && (
+                <>
+                    <PointHandle
+                        x={x1}
+                        y={y1}
+                        scale={scale}
+                        onDragMove={(mx, my, first, memo) => {
+                            if (first || !memo) memo = { x: ruler.startX, y: ruler.startY };
+                            const rawPoint = {
+                                x: roundUnit(memo.x + (mx / scale) / GRID_SIZE),
+                                y: roundUnit(memo.y + (my / scale) / GRID_SIZE)
+                            };
+                            const snapped = snapWallPoint(rawPoint, walls, { x: ruler.endX, y: ruler.endY });
+                            setSnapGuides(snapped.guides);
+                            updateRuler(ruler.id, { startX: snapped.x, startY: snapped.y });
+                            return memo;
+                        }}
+                    />
+                    <PointHandle
+                        x={x2}
+                        y={y2}
+                        scale={scale}
+                        onDragMove={(mx, my, first, memo) => {
+                            if (first || !memo) memo = { x: ruler.endX, y: ruler.endY };
+                            const rawPoint = {
+                                x: roundUnit(memo.x + (mx / scale) / GRID_SIZE),
+                                y: roundUnit(memo.y + (my / scale) / GRID_SIZE)
+                            };
+                            const snapped = snapWallPoint(rawPoint, walls, { x: ruler.startX, y: ruler.startY });
+                            setSnapGuides(snapped.guides);
+                            updateRuler(ruler.id, { endX: snapped.x, endY: snapped.y });
                             return memo;
                         }}
                     />
@@ -1896,6 +2052,7 @@ export default function Canvas2D() {
         cylinders,
         surfaces,
         stairs,
+        rulers,
         activeFloorId,
         addWall,
         addDoor,
@@ -1903,6 +2060,7 @@ export default function Canvas2D() {
         addFurniture,
         addCylinder,
         addStair,
+        addRuler,
         interactMode,
         setSelectedElement
     } = useStore();
@@ -1961,6 +2119,7 @@ export default function Canvas2D() {
     const visibleCylinders = cylinders.filter((cylinder) => cylinder.floorId === activeFloorId);
     const visibleSurfaces = surfaces.filter((surface) => surface.floorId === activeFloorId);
     const visibleStairs = stairs.filter((stair) => stair.floorId === activeFloorId);
+    const visibleRulers = rulers.filter((ruler) => ruler.floorId === activeFloorId);
     const sortedPolygonRooms = useMemo(
         () => sortLockedFirst(visibleRooms.filter((room) => room.points && room.points.length >= 3)),
         [visibleRooms]
@@ -1973,6 +2132,7 @@ export default function Canvas2D() {
     const sortedVisibleSurfaces = useMemo(() => sortLockedFirst(visibleSurfaces), [visibleSurfaces]);
     const sortedVisibleCylinders = useMemo(() => sortLockedFirst(visibleCylinders), [visibleCylinders]);
     const sortedVisibleStairs = useMemo(() => sortLockedFirst(visibleStairs), [visibleStairs]);
+    const sortedVisibleRulers = useMemo(() => sortLockedFirst(visibleRulers), [visibleRulers]);
     const sortedVisibleFurniture = useMemo(() => sortLockedFirst(visibleFurniture), [visibleFurniture]);
     const sortedVisibleDoors = useMemo(() => sortLockedFirst(visibleDoors), [visibleDoors]);
     const distanceCandidates = useMemo(
@@ -1981,9 +2141,10 @@ export default function Canvas2D() {
             ...visibleFurniture.map((item) => ({ id: item.id, rect: getObjectBounds(item, 'furniture') })),
             ...visibleCylinders.map((cylinder) => ({ id: cylinder.id, rect: getObjectBounds(cylinder, 'cylinder') })),
             ...visibleStairs.map((stair) => ({ id: stair.id, rect: getObjectBounds(stair, 'stair') })),
-            ...visibleWalls.map((wall) => ({ id: wall.id, rect: getObjectBounds(wall, 'wall') }))
+            ...visibleWalls.map((wall) => ({ id: wall.id, rect: getObjectBounds(wall, 'wall') })),
+            ...visibleRulers.map((ruler) => ({ id: ruler.id, rect: getObjectBounds(ruler, 'ruler') }))
         ],
-        [visibleCylinders, visibleFurniture, visibleRooms, visibleStairs, visibleWalls]
+        [visibleCylinders, visibleFurniture, visibleRooms, visibleRulers, visibleStairs, visibleWalls]
     );
     const roomOpeningsById = useMemo(() => {
         const nextMap = new Map<string, Rect2D[]>();
@@ -2256,6 +2417,16 @@ export default function Canvas2D() {
                 addCylinder({ ...payload, x: point.x, y: point.y });
             } else if (type === 'furniture') {
                 addFurniture({ ...payload, x: point.x, y: point.y });
+            } else if (type === 'ruler') {
+                const deltaX = (payload.endX ?? 4) - (payload.startX ?? 0);
+                const deltaY = (payload.endY ?? 0) - (payload.startY ?? 0);
+                addRuler({
+                    ...payload,
+                    startX: point.x,
+                    startY: point.y,
+                    endX: roundUnit(point.x + deltaX),
+                    endY: roundUnit(point.y + deltaY)
+                });
             } else if (type === 'stair') {
                 if (!payload.targetFloorId && !defaultTargetFloorId) {
                     alert('Create another level first so the stair has a target.');
@@ -2555,6 +2726,16 @@ export default function Canvas2D() {
 
                     {sortedVisibleWalls.map((wall) => (
                         <WallElement key={wall.id} wall={wall} scale={scale} walls={visibleWalls} setSnapGuides={setSnapGuides} />
+                    ))}
+
+                    {sortedVisibleRulers.map((ruler) => (
+                        <RulerElement
+                            key={ruler.id}
+                            ruler={ruler}
+                            scale={scale}
+                            walls={visibleWalls}
+                            setSnapGuides={setSnapGuides}
+                        />
                     ))}
 
                     {drawingWall && (
