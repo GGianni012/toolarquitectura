@@ -109,6 +109,17 @@ function getGhostFloorOpacity(distance: number) {
     return clamp(FLOOR_GHOST_MAX_OPACITY * falloff, FLOOR_GHOST_MIN_OPACITY, FLOOR_GHOST_MAX_OPACITY);
 }
 
+function sortLockedFirst<T extends { locked?: boolean }>(items: T[]) {
+    return [...items].sort((a, b) => {
+        if (!!a.locked === !!b.locked) return 0;
+        return a.locked ? -1 : 1;
+    });
+}
+
+function getCanvasStackOrder(baseOrder: number, locked?: boolean) {
+    return locked ? Math.max(0, baseOrder - 100) : baseOrder;
+}
+
 function integrateRectWithRooms(rect: Rect2D, rooms: Room[], floorId: string) {
     const hostRoom = findBestRoomForRect(rect, rooms, floorId);
     if (!hostRoom) {
@@ -894,6 +905,8 @@ function RoomElement({
                 transform: `rotate(${room.rotation || 0}deg)`,
                 transformOrigin: 'center center',
                 opacity: layer?.opacity ?? 1,
+                pointerEvents: room.locked ? 'none' : 'auto',
+                zIndex: getCanvasStackOrder(10, room.locked),
                 ...getRectRoomWallStyles(room)
             }}
         >
@@ -1230,7 +1243,9 @@ function FurnitureElement({
                 transformOrigin: 'center center',
                 backgroundColor: item.color || preset.color,
                 boxShadow: isSelected ? '0 0 0 3px #fca5a5' : undefined,
-                opacity: layer?.opacity ?? 1
+                opacity: layer?.opacity ?? 1,
+                pointerEvents: item.locked ? 'none' : 'auto',
+                zIndex: getCanvasStackOrder(40, item.locked)
             }}
         >
             {renderTopView()}
@@ -1326,7 +1341,9 @@ function CylinderElement({
                 borderRadius: '50%',
                 backgroundColor: cylinder.color || '#b8ffb8',
                 boxShadow: isSelected ? '0 0 0 3px #fca5a5' : undefined,
-                opacity: layer?.opacity ?? 1
+                opacity: layer?.opacity ?? 1,
+                pointerEvents: cylinder.locked ? 'none' : 'auto',
+                zIndex: getCanvasStackOrder(20, cylinder.locked)
             }}
         >
             {showLabel && (
@@ -1395,8 +1412,9 @@ function DoorElement({ door, scale }: { door: Door; scale: number }) {
                 height: 12,
                 backgroundColor: door.color || (isSelected ? '#fca5a5' : '#fbbf24'),
                 transform: `translate(-50%, -50%) rotate(${angle}deg)`,
-                cursor: interactMode === 'select' && !door.locked ? 'grab' : 'pointer',
-                zIndex: 3,
+                cursor: interactMode === 'select' && !door.locked ? 'grab' : 'default',
+                pointerEvents: door.locked ? 'none' : 'auto',
+                zIndex: getCanvasStackOrder(50, door.locked),
                 boxShadow: '0 2px 4px rgba(0,0,0,0.5)',
                 borderRadius: 999,
                 border: isSelected ? '2px solid white' : 'none',
@@ -1526,7 +1544,9 @@ function StairElement({
                     : undefined,
                 boxShadow: isSelected ? '0 0 0 3px #fca5a5' : undefined,
                 opacity: layer?.opacity ?? 1,
-                borderRadius: isSpiral ? '50%' : undefined
+                borderRadius: isSpiral ? '50%' : undefined,
+                pointerEvents: stair.locked ? 'none' : 'auto',
+                zIndex: getCanvasStackOrder(30, stair.locked)
             }}
         >
             {isSpiral ? (
@@ -1656,7 +1676,10 @@ function SurfaceElement({ surface, scale }: { surface: Surface; scale: number })
                 stroke={isSelected ? '#fca5a5' : '#666'}
                 strokeWidth={isSelected ? 3 / scale : 1 / scale}
                 opacity={layer?.opacity ?? 1}
-                style={{ cursor: interactMode === 'select' ? (surface.locked ? 'pointer' : 'grab') : 'default', pointerEvents: interactMode === 'select' ? 'all' : 'none' }}
+                style={{
+                    cursor: interactMode === 'select' ? (surface.locked ? 'default' : 'grab') : 'default',
+                    pointerEvents: interactMode === 'select' && !surface.locked ? 'all' : 'none'
+                }}
             />
             {isSelected && surface.points.map((point, index) => {
                 const nextPoint = surface.points[(index + 1) % surface.points.length];
@@ -1776,7 +1799,10 @@ function PolygonRoomElement({
                 fill={room.color || 'rgba(255, 184, 184, 0.58)'}
                 stroke={isSelected ? '#fca5a5' : 'rgba(255,255,255,0.12)'}
                 strokeWidth={isSelected ? 2 / scale : 1 / scale}
-                style={{ cursor: interactMode === 'select' ? (room.locked ? 'pointer' : 'grab') : 'default', pointerEvents: interactMode === 'select' ? 'all' : 'none' }}
+                style={{
+                    cursor: interactMode === 'select' ? (room.locked ? 'default' : 'grab') : 'default',
+                    pointerEvents: interactMode === 'select' && !room.locked ? 'all' : 'none'
+                }}
             />
             {renderPolygonRoomEdges(room, scale)}
             <text
@@ -1924,6 +1950,20 @@ export default function Canvas2D() {
     const visibleCylinders = cylinders.filter((cylinder) => cylinder.floorId === activeFloorId);
     const visibleSurfaces = surfaces.filter((surface) => surface.floorId === activeFloorId);
     const visibleStairs = stairs.filter((stair) => stair.floorId === activeFloorId);
+    const sortedPolygonRooms = useMemo(
+        () => sortLockedFirst(visibleRooms.filter((room) => room.points && room.points.length >= 3)),
+        [visibleRooms]
+    );
+    const sortedRectRooms = useMemo(
+        () => sortLockedFirst(visibleRooms.filter((room) => !room.points || room.points.length < 3)),
+        [visibleRooms]
+    );
+    const sortedVisibleWalls = useMemo(() => sortLockedFirst(visibleWalls), [visibleWalls]);
+    const sortedVisibleSurfaces = useMemo(() => sortLockedFirst(visibleSurfaces), [visibleSurfaces]);
+    const sortedVisibleCylinders = useMemo(() => sortLockedFirst(visibleCylinders), [visibleCylinders]);
+    const sortedVisibleStairs = useMemo(() => sortLockedFirst(visibleStairs), [visibleStairs]);
+    const sortedVisibleFurniture = useMemo(() => sortLockedFirst(visibleFurniture), [visibleFurniture]);
+    const sortedVisibleDoors = useMemo(() => sortLockedFirst(visibleDoors), [visibleDoors]);
     const distanceCandidates = useMemo(
         () => [
             ...visibleRooms.map((room) => ({ id: room.id, rect: getObjectBounds(room, 'room') })),
@@ -2455,11 +2495,11 @@ export default function Canvas2D() {
                         </g>
                     ))}
 
-                    {visibleSurfaces.map((surface) => (
+                    {sortedVisibleSurfaces.map((surface) => (
                         <SurfaceElement key={surface.id} surface={surface} scale={scale} />
                     ))}
 
-                    {visibleRooms.filter((room) => room.points && room.points.length >= 3).map((room) => (
+                    {sortedPolygonRooms.map((room) => (
                         <PolygonRoomElement
                             key={room.id}
                             room={room}
@@ -2503,7 +2543,7 @@ export default function Canvas2D() {
                         </g>
                     )}
 
-                    {visibleWalls.map((wall) => (
+                    {sortedVisibleWalls.map((wall) => (
                         <WallElement key={wall.id} wall={wall} scale={scale} walls={visibleWalls} setSnapGuides={setSnapGuides} />
                     ))}
 
@@ -2513,7 +2553,7 @@ export default function Canvas2D() {
                 </svg>
 
                 <div className="canvas-2d-content" style={{ pointerEvents: interactMode === 'select' ? 'auto' : 'none', width: CANVAS_WORLD_SIZE, height: CANVAS_WORLD_SIZE }}>
-                    {visibleRooms.filter((room) => !room.points || room.points.length < 3).map((room) => (
+                    {sortedRectRooms.map((room) => (
                         <RoomElement
                             key={room.id}
                             room={room}
@@ -2525,7 +2565,7 @@ export default function Canvas2D() {
                             setDistanceGuides={setDistanceGuides}
                         />
                     ))}
-                    {visibleCylinders.map((cylinder) => (
+                    {sortedVisibleCylinders.map((cylinder) => (
                         <CylinderElement
                             key={cylinder.id}
                             cylinder={cylinder}
@@ -2534,7 +2574,7 @@ export default function Canvas2D() {
                             setDistanceGuides={setDistanceGuides}
                         />
                     ))}
-                    {visibleStairs.map((stair) => (
+                    {sortedVisibleStairs.map((stair) => (
                         <StairElement
                             key={stair.id}
                             stair={stair}
@@ -2543,7 +2583,7 @@ export default function Canvas2D() {
                             setDistanceGuides={setDistanceGuides}
                         />
                     ))}
-                    {visibleFurniture.map((item) => (
+                    {sortedVisibleFurniture.map((item) => (
                         <FurnitureElement
                             key={item.id}
                             item={item}
@@ -2552,7 +2592,7 @@ export default function Canvas2D() {
                             setDistanceGuides={setDistanceGuides}
                         />
                     ))}
-                    {visibleDoors.map((door) => (
+                    {sortedVisibleDoors.map((door) => (
                         <DoorElement key={door.id} door={door} scale={scale} />
                     ))}
                     {previewDoor && interactMode === 'place_door' && (

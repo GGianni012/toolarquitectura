@@ -26,6 +26,7 @@ const WALL_THICKNESS = 0.18;
 const FLOOR_THICKNESS = 0.12;
 const ROOM_WALL_COLOR = '#eef2f6';
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
+const ignoreLockedRaycast = () => null;
 
 type WallOpening = {
     startDistance: number;
@@ -313,7 +314,7 @@ function Room3D({ room, floor, openings = [] }: { room: Room; floor: Floor; open
 
     if (polygonShape) {
         return (
-            <group onClick={handleSelect}>
+            <group onClick={handleSelect} raycast={room.locked ? ignoreLockedRaycast : undefined}>
                 <group position={[0, floor.elevation + 0.002, 0]} rotation={[Math.PI / 2, 0, 0]}>
                     <mesh receiveShadow castShadow>
                         <extrudeGeometry args={[polygonShape, { depth: FLOOR_THICKNESS, bevelEnabled: false }]} />
@@ -338,6 +339,7 @@ function Room3D({ room, floor, openings = [] }: { room: Room; floor: Floor; open
                     position={[patch.x + patch.width / 2, floor.elevation, patch.y + patch.height / 2]}
                     rotation={[0, canUseOpenings ? 0 : rotationRadians, 0]}
                     onClick={handleSelect}
+                    raycast={room.locked ? ignoreLockedRaycast : undefined}
                 >
             <Box args={[patch.width, FLOOR_THICKNESS, patch.height]} position={[0, -FLOOR_THICKNESS / 2, 0]} castShadow receiveShadow>
                 <meshStandardMaterial
@@ -356,11 +358,13 @@ function Room3D({ room, floor, openings = [] }: { room: Room; floor: Floor; open
 function RoomWall3D({
     segment,
     floor,
-    doorOpenings
+    doorOpenings,
+    locked = false
 }: {
     segment: RoomWallSegment;
     floor: Floor;
     doorOpenings: WallOpening[];
+    locked?: boolean;
 }) {
     const { setActiveFloor, setSelectedElement } = useStore();
     const layer = (floor.layerSettings || defaultLayerSettings).walls;
@@ -369,6 +373,7 @@ function RoomWall3D({
 
     return (
         <group
+            raycast={locked ? ignoreLockedRaycast : undefined}
             onClick={(event) => {
                 event.stopPropagation();
                 setActiveFloor(segment.floorId);
@@ -410,6 +415,7 @@ function Wall3D({
 
     return (
         <group
+            raycast={wall.locked ? ignoreLockedRaycast : undefined}
             onClick={(event) => {
                 event.stopPropagation();
                 setActiveFloor(wall.floorId);
@@ -441,6 +447,7 @@ function Door3D({ door, placement, floor, thickness }: { door: Door; placement: 
         <group
             position={[placement.center.x, floor.elevation, placement.center.y]}
             rotation={[0, -placement.angle, 0]}
+            raycast={door.locked ? ignoreLockedRaycast : undefined}
             onClick={(event) => {
                 event.stopPropagation();
                 setActiveFloor(door.floorId);
@@ -468,6 +475,7 @@ function Cylinder3D({ cylinder, floor }: { cylinder: Cylinder; floor: Floor }) {
     return (
         <group
             position={[cylinder.x, floor.elevation + height / 2, cylinder.y]}
+            raycast={cylinder.locked ? ignoreLockedRaycast : undefined}
             onClick={(event) => {
                 event.stopPropagation();
                 setActiveFloor(cylinder.floorId);
@@ -530,6 +538,7 @@ function Furniture3D({ item, floor }: { item: Furniture; floor: Floor }) {
             ref={groupRef}
             position={[item.x + width / 2, floor.elevation + height / 2 + altitude, item.y + depth / 2]}
             rotation={[0, rotationY, 0]}
+            raycast={item.locked ? ignoreLockedRaycast : undefined}
             onClick={(event) => {
                 event.stopPropagation();
                 setActiveFloor(item.floorId);
@@ -947,6 +956,7 @@ function Surface3D({ surface, floor }: { surface: Surface; floor: Floor }) {
         <group
             position={[0, floor.elevation + altitude + 0.01, 0]}
             rotation={[Math.PI / 2, 0, 0]}
+            raycast={surface.locked ? ignoreLockedRaycast : undefined}
             onClick={(event) => {
                 event.stopPropagation();
                 setActiveFloor(surface.floorId);
@@ -1004,6 +1014,7 @@ function Stair3D({ stair, floor, targetFloor }: { stair: Stair; floor: Floor; ta
         return (
             <group
                 position={[baseX, floor.elevation, baseZ]}
+                raycast={stair.locked ? ignoreLockedRaycast : undefined}
                 onClick={(event) => {
                     event.stopPropagation();
                     setActiveFloor(stair.floorId);
@@ -1067,6 +1078,7 @@ function Stair3D({ stair, floor, targetFloor }: { stair: Stair; floor: Floor; ta
     return (
         <group
             position={[baseX, floor.elevation, baseZ]}
+            raycast={stair.locked ? ignoreLockedRaycast : undefined}
             onClick={(event) => {
                 event.stopPropagation();
                 setActiveFloor(stair.floorId);
@@ -1240,6 +1252,10 @@ export default function Canvas3D() {
     const visibleFurniture = furniture.filter((item) => floorMap.has(item.floorId));
     const visibleSurfaces = surfaces.filter((surface) => floorMap.has(surface.floorId));
     const visibleStairs = stairs.filter((stair) => floorMap.has(stair.floorId) && floorMap.has(stair.targetFloorId));
+    const lockedRoomIds = useMemo(
+        () => new Set(visibleRooms.filter((room) => room.locked).map((room) => room.id)),
+        [visibleRooms]
+    );
     const roomWallSegments = useMemo(
         () => subtractWallOverlapsFromRoomSegments(buildRoomWallSegments(visibleRooms, visibleFloors), visibleWalls),
         [visibleFloors, visibleRooms, visibleWalls]
@@ -1487,6 +1503,7 @@ export default function Canvas3D() {
                             segment={segment}
                             floor={floor}
                             doorOpenings={roomSegmentDoorMap.get(segment.id) || []}
+                            locked={segment.contributors.some((contributor) => contributor.roomId ? lockedRoomIds.has(contributor.roomId) : false)}
                         />
                     ) : null;
                 })}
