@@ -40,6 +40,23 @@ function usesTransparentPass(opacity: number) {
     return opacity < 0.999;
 }
 
+function getFloorRenderBaseOrder(floor: Floor) {
+    return Math.round(floor.elevation * 100) * 24;
+}
+
+function getBlendMaterialProps(opacity: number) {
+    const transparent = usesTransparentPass(opacity);
+
+    return {
+        transparent,
+        opacity,
+        depthWrite: !transparent,
+        depthTest: true,
+        premultipliedAlpha: transparent,
+        blending: THREE.NormalBlending
+    };
+}
+
 type WallOpening = {
     startDistance: number;
     endDistance: number;
@@ -95,7 +112,8 @@ function WallWithOpenings({
     thickness,
     color,
     openings = [],
-    opacity = 1
+    opacity = 1,
+    renderOrder = 0
 }: {
     start: { x: number; y: number };
     angle: number;
@@ -106,6 +124,7 @@ function WallWithOpenings({
     color: string;
     openings?: WallOpening[];
     opacity?: number;
+    renderOrder?: number;
 }) {
     const normalizedOpenings = useMemo(
         () => normalizeWallOpenings(openings, length, height),
@@ -162,8 +181,8 @@ function WallWithOpenings({
     return (
         <group position={[start.x, baseElevation, start.y]} rotation={[0, -angle, 0]}>
             {segments.map((segment) => (
-                <Box key={segment.key} args={segment.args} position={segment.position} castShadow receiveShadow>
-                    <meshStandardMaterial color={color} transparent={opacity < 0.999} opacity={opacity} />
+                <Box key={segment.key} args={segment.args} position={segment.position} castShadow receiveShadow renderOrder={renderOrder}>
+                    <meshStandardMaterial color={color} {...getBlendMaterialProps(opacity)} />
                 </Box>
             ))}
         </group>
@@ -310,11 +329,14 @@ function Room3D({ room, floor, openings = [] }: { room: Room; floor: Floor; open
     const layer = (floor.layerSettings || defaultLayerSettings).rooms;
     if (layer && !layer.visible) return null;
     const opacity = layer?.opacity ?? 1;
+    const isTransparent = usesTransparentPass(opacity);
     const rotationRadians = -THREE.MathUtils.degToRad(room.rotation || 0);
     const roomHeight = room.wallHeight || floor.height || DEFAULT_LEVEL_HEIGHT;
     const floorTopY = floor.elevation + FLOOR_SURFACE_LIFT;
     const ceilingTopY = floor.elevation + Math.max(roomHeight - CEILING_CLEARANCE, FLOOR_THICKNESS + CEILING_THICKNESS);
     const ceilingCenterY = ceilingTopY - CEILING_THICKNESS / 2;
+    const floorRenderOrder = getFloorRenderBaseOrder(floor) + ROOM_FLOOR_RENDER_ORDER;
+    const ceilingRenderOrder = getFloorRenderBaseOrder(floor) + ROOM_CEILING_RENDER_ORDER;
     const ceilingColor = useMemo(
         () => new THREE.Color(room.color || '#dddddd').lerp(new THREE.Color('#ffffff'), 0.22),
         [room.color]
@@ -347,31 +369,61 @@ function Room3D({ room, floor, openings = [] }: { room: Room; floor: Floor; open
     if (polygonShape) {
         return (
             <group onClick={handleSelect} raycast={room.locked ? ignoreLockedRaycast : undefined}>
-                <group position={[0, floorTopY, 0]} rotation={[Math.PI / 2, 0, 0]}>
-                    <mesh receiveShadow castShadow renderOrder={ROOM_FLOOR_RENDER_ORDER}>
-                        <extrudeGeometry args={[polygonShape, { depth: FLOOR_THICKNESS, bevelEnabled: false }]} />
+                {isTransparent ? (
+                    <mesh
+                        position={[0, floorTopY, 0]}
+                        rotation={[-Math.PI / 2, 0, 0]}
+                        renderOrder={floorRenderOrder}
+                    >
+                        <shapeGeometry args={[polygonShape]} />
                         <meshStandardMaterial
                             color={room.color || '#dddddd'}
                             roughness={0.85}
                             side={THREE.DoubleSide}
-                            transparent={usesTransparentPass(opacity)}
-                            opacity={opacity}
+                            {...getBlendMaterialProps(opacity)}
                         />
                     </mesh>
-                </group>
+                ) : (
+                    <group position={[0, floorTopY, 0]} rotation={[Math.PI / 2, 0, 0]}>
+                        <mesh receiveShadow castShadow renderOrder={floorRenderOrder}>
+                            <extrudeGeometry args={[polygonShape, { depth: FLOOR_THICKNESS, bevelEnabled: false }]} />
+                            <meshStandardMaterial
+                                color={room.color || '#dddddd'}
+                                roughness={0.85}
+                                side={THREE.DoubleSide}
+                                {...getBlendMaterialProps(opacity)}
+                            />
+                        </mesh>
+                    </group>
+                )}
                 {room.showCeiling && (
-                    <group position={[0, ceilingTopY, 0]} rotation={[Math.PI / 2, 0, 0]}>
-                        <mesh receiveShadow castShadow renderOrder={ROOM_CEILING_RENDER_ORDER}>
-                            <extrudeGeometry args={[polygonShape, { depth: CEILING_THICKNESS, bevelEnabled: false }]} />
+                    isTransparent ? (
+                        <mesh
+                            position={[0, ceilingTopY, 0]}
+                            rotation={[-Math.PI / 2, 0, 0]}
+                            renderOrder={ceilingRenderOrder}
+                        >
+                            <shapeGeometry args={[polygonShape]} />
                             <meshStandardMaterial
                                 color={ceilingColor}
                                 roughness={0.72}
                                 side={THREE.DoubleSide}
-                                transparent={usesTransparentPass(opacity)}
-                                opacity={opacity}
+                                {...getBlendMaterialProps(opacity)}
                             />
                         </mesh>
-                    </group>
+                    ) : (
+                        <group position={[0, ceilingTopY, 0]} rotation={[Math.PI / 2, 0, 0]}>
+                            <mesh receiveShadow castShadow renderOrder={ceilingRenderOrder}>
+                                <extrudeGeometry args={[polygonShape, { depth: CEILING_THICKNESS, bevelEnabled: false }]} />
+                                <meshStandardMaterial
+                                    color={ceilingColor}
+                                    roughness={0.72}
+                                    side={THREE.DoubleSide}
+                                    {...getBlendMaterialProps(opacity)}
+                                />
+                            </mesh>
+                        </group>
+                    )
                 )}
             </group>
         );
@@ -382,37 +434,59 @@ function Room3D({ room, floor, openings = [] }: { room: Room; floor: Floor; open
             {(canUseOpenings ? floorPatches : [{ x: room.x, y: room.y, width: room.width, height: room.height }]).map((patch, index) => (
                 <group
                     key={`${room.id}-patch-${index}`}
-                    position={[patch.x + patch.width / 2, floorTopY - FLOOR_THICKNESS / 2, patch.y + patch.height / 2]}
+                    position={[patch.x + patch.width / 2, 0, patch.y + patch.height / 2]}
                     rotation={[0, canUseOpenings ? 0 : rotationRadians, 0]}
                     onClick={handleSelect}
                     raycast={room.locked ? ignoreLockedRaycast : undefined}
                 >
-                    <Box args={[patch.width, FLOOR_THICKNESS, patch.height]} castShadow receiveShadow renderOrder={ROOM_FLOOR_RENDER_ORDER}>
-                        <meshStandardMaterial
-                            color={room.color || '#dddddd'}
-                            roughness={0.85}
-                            transparent={usesTransparentPass(opacity)}
-                            opacity={opacity}
-                        />
-                    </Box>
+                    {isTransparent ? (
+                        <mesh position={[0, floorTopY, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={floorRenderOrder}>
+                            <planeGeometry args={[patch.width, patch.height]} />
+                            <meshStandardMaterial
+                                color={room.color || '#dddddd'}
+                                roughness={0.85}
+                                side={THREE.DoubleSide}
+                                {...getBlendMaterialProps(opacity)}
+                            />
+                        </mesh>
+                    ) : (
+                        <Box args={[patch.width, FLOOR_THICKNESS, patch.height]} position={[0, floorTopY - FLOOR_THICKNESS / 2, 0]} castShadow receiveShadow renderOrder={floorRenderOrder}>
+                            <meshStandardMaterial
+                                color={room.color || '#dddddd'}
+                                roughness={0.85}
+                                {...getBlendMaterialProps(opacity)}
+                            />
+                        </Box>
+                    )}
                 </group>
             ))}
             {room.showCeiling && (canUseOpenings ? floorPatches : [{ x: room.x, y: room.y, width: room.width, height: room.height }]).map((patch, index) => (
                 <group
                     key={`${room.id}-ceiling-${index}`}
-                    position={[patch.x + patch.width / 2, ceilingCenterY, patch.y + patch.height / 2]}
+                    position={[patch.x + patch.width / 2, 0, patch.y + patch.height / 2]}
                     rotation={[0, canUseOpenings ? 0 : rotationRadians, 0]}
                     raycast={room.locked ? ignoreLockedRaycast : undefined}
                     onClick={handleSelect}
                 >
-                    <Box args={[patch.width, CEILING_THICKNESS, patch.height]} castShadow receiveShadow renderOrder={ROOM_CEILING_RENDER_ORDER}>
-                        <meshStandardMaterial
-                            color={ceilingColor}
-                            roughness={0.72}
-                            transparent={usesTransparentPass(opacity)}
-                            opacity={opacity}
-                        />
-                    </Box>
+                    {isTransparent ? (
+                        <mesh position={[0, ceilingTopY, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={ceilingRenderOrder}>
+                            <planeGeometry args={[patch.width, patch.height]} />
+                            <meshStandardMaterial
+                                color={ceilingColor}
+                                roughness={0.72}
+                                side={THREE.DoubleSide}
+                                {...getBlendMaterialProps(opacity)}
+                            />
+                        </mesh>
+                    ) : (
+                        <Box args={[patch.width, CEILING_THICKNESS, patch.height]} position={[0, ceilingCenterY, 0]} castShadow receiveShadow renderOrder={ceilingRenderOrder}>
+                            <meshStandardMaterial
+                                color={ceilingColor}
+                                roughness={0.72}
+                                {...getBlendMaterialProps(opacity)}
+                            />
+                        </Box>
+                    )}
                 </group>
             ))}
         </>
@@ -434,6 +508,7 @@ function RoomWall3D({
     const layer = (floor.layerSettings || defaultLayerSettings).walls;
     if (layer && !layer.visible) return null;
     if (!segment.visible) return null;
+    const renderOrder = getFloorRenderBaseOrder(floor) + 14;
 
     return (
         <group
@@ -456,6 +531,7 @@ function RoomWall3D({
                 thickness={WALL_THICKNESS}
                 color={ROOM_WALL_COLOR}
                 opacity={layer?.opacity ?? 1}
+                renderOrder={renderOrder}
                 openings={doorOpenings}
             />
         </group>
@@ -476,6 +552,7 @@ function Wall3D({
     const height = wall.wallHeight || floor.height || DEFAULT_LEVEL_HEIGHT;
     const layer = (floor.layerSettings || defaultLayerSettings).walls;
     if (layer && !layer.visible) return null;
+    const renderOrder = getFloorRenderBaseOrder(floor) + 15;
 
     return (
         <group
@@ -495,6 +572,7 @@ function Wall3D({
                 thickness={wall.thickness || WALL_THICKNESS}
                 color={wall.color || '#f0f0f0'}
                 opacity={layer?.opacity ?? 1}
+                renderOrder={renderOrder}
                 openings={doorOpenings}
             />
         </group>
@@ -506,6 +584,8 @@ function Door3D({ door, placement, floor, thickness }: { door: Door; placement: 
     const doorLeafThickness = Math.min(thickness || WALL_THICKNESS, 0.08);
     const layer = (floor.layerSettings || defaultLayerSettings).doors;
     if (layer && !layer.visible) return null;
+    const opacity = layer?.opacity ?? 1;
+    const renderOrder = getFloorRenderBaseOrder(floor) + 18;
 
     return (
         <group
@@ -518,13 +598,12 @@ function Door3D({ door, placement, floor, thickness }: { door: Door; placement: 
                 setSelectedElement({ id: door.id, type: 'door' });
             }}
         >
-            <Box args={[placement.width, placement.doorHeight, doorLeafThickness]} position={[0, placement.doorHeight / 2, 0]} castShadow>
+            <Box args={[placement.width, placement.doorHeight, doorLeafThickness]} position={[0, placement.doorHeight / 2, 0]} castShadow renderOrder={renderOrder}>
                 <meshStandardMaterial
                     color={door.color || '#c78d54'}
                     metalness={0.05}
                     roughness={0.45}
-                    transparent={layer?.opacity !== undefined ? layer.opacity < 1 : false}
-                    opacity={layer?.opacity ?? 1}
+                    {...getBlendMaterialProps(opacity)}
                 />
             </Box>
         </group>
@@ -536,6 +615,8 @@ function Cylinder3D({ cylinder, floor }: { cylinder: Cylinder; floor: Floor }) {
     const height = cylinder.wallHeight || floor.height || DEFAULT_LEVEL_HEIGHT;
     const layer = (floor.layerSettings || defaultLayerSettings).cylinders;
     if (layer && !layer.visible) return null;
+    const opacity = layer?.opacity ?? 1;
+    const renderOrder = getFloorRenderBaseOrder(floor) + 22;
     return (
         <group
             position={[cylinder.x, floor.elevation + height / 2, cylinder.y]}
@@ -546,11 +627,10 @@ function Cylinder3D({ cylinder, floor }: { cylinder: Cylinder; floor: Floor }) {
                 setSelectedElement({ id: cylinder.id, type: 'cylinder' });
             }}
         >
-            <CylinderShape args={[cylinder.radius, cylinder.radius, height, 32]} castShadow receiveShadow>
+            <CylinderShape args={[cylinder.radius, cylinder.radius, height, 32]} castShadow receiveShadow renderOrder={renderOrder}>
                 <meshStandardMaterial
                     color={cylinder.color || '#f0f0f0'}
-                    transparent={layer?.opacity !== undefined ? layer.opacity < 1 : false}
-                    opacity={layer?.opacity ?? 1}
+                    {...getBlendMaterialProps(opacity)}
                 />
             </CylinderShape>
         </group>
@@ -592,6 +672,12 @@ function Furniture3D({ item, floor }: { item: Furniture; floor: Floor }) {
                 material.opacity = opacity;
                 // @ts-ignore
                 material.transparent = opacity < 1;
+                // @ts-ignore
+                material.depthWrite = opacity >= 0.999;
+                // @ts-ignore
+                material.depthTest = true;
+                // @ts-ignore
+                material.premultipliedAlpha = opacity < 1;
                 material.needsUpdate = true;
             }
         });
@@ -1022,6 +1108,8 @@ function Surface3D({ surface, floor }: { surface: Surface; floor: Floor }) {
     const layer = (floor.layerSettings || defaultLayerSettings).surfaces;
     if (layer && !layer.visible) return null;
     const opacity = layer?.opacity ?? 1;
+    const isTransparent = usesTransparentPass(opacity);
+    const renderOrder = getFloorRenderBaseOrder(floor) + SURFACE_RENDER_ORDER;
     const surfaceBaseY = floor.elevation + altitude + SURFACE_CLEARANCE;
 
     const shape = useMemo(() => {
@@ -1052,15 +1140,25 @@ function Surface3D({ surface, floor }: { surface: Surface; floor: Floor }) {
                 setSelectedElement({ id: surface.id, type: 'surface' });
             }}
         >
-            <mesh receiveShadow castShadow renderOrder={SURFACE_RENDER_ORDER}>
-                <extrudeGeometry args={[shape, { depth, bevelEnabled: false }]} />
-                <meshStandardMaterial
-                    color={surface.color || '#cccccc'}
-                    side={THREE.DoubleSide}
-                    transparent={usesTransparentPass(opacity)}
-                    opacity={opacity}
-                />
-            </mesh>
+            {isTransparent ? (
+                <mesh renderOrder={renderOrder}>
+                    <shapeGeometry args={[shape]} />
+                    <meshStandardMaterial
+                        color={surface.color || '#cccccc'}
+                        side={THREE.DoubleSide}
+                        {...getBlendMaterialProps(opacity)}
+                    />
+                </mesh>
+            ) : (
+                <mesh receiveShadow castShadow renderOrder={renderOrder}>
+                    <extrudeGeometry args={[shape, { depth, bevelEnabled: false }]} />
+                    <meshStandardMaterial
+                        color={surface.color || '#cccccc'}
+                        side={THREE.DoubleSide}
+                        {...getBlendMaterialProps(opacity)}
+                    />
+                </mesh>
+            )}
         </group>
     );
 }
@@ -1070,6 +1168,7 @@ function Ruler3D({ ruler, floor }: { ruler: Ruler; floor: Floor }) {
     const layer = (floor.layerSettings || defaultLayerSettings).rulers;
     if (layer && !layer.visible) return null;
     const opacity = layer?.opacity ?? 1;
+    const renderOrder = getFloorRenderBaseOrder(floor) + RULER_RENDER_ORDER;
 
     const dx = ruler.endX - ruler.startX;
     const dz = ruler.endY - ruler.startY;
@@ -1087,20 +1186,19 @@ function Ruler3D({ ruler, floor }: { ruler: Ruler; floor: Floor }) {
                 setSelectedElement({ id: ruler.id, type: 'ruler' });
             }}
         >
-            <Box args={[length, 0.028, 0.06]} castShadow receiveShadow renderOrder={RULER_RENDER_ORDER}>
+            <Box args={[length, 0.028, 0.06]} castShadow receiveShadow renderOrder={renderOrder}>
                 <meshStandardMaterial
                     color={ruler.color || '#7dd3fc'}
                     emissive={ruler.color || '#7dd3fc'}
                     emissiveIntensity={0.18}
-                    transparent={usesTransparentPass(opacity)}
-                    opacity={opacity}
+                    {...getBlendMaterialProps(opacity)}
                 />
             </Box>
-            <Box args={[0.08, 0.08, 0.08]} position={[-length / 2, 0, 0]} castShadow receiveShadow renderOrder={RULER_RENDER_ORDER}>
-                <meshStandardMaterial color="#e8f3ff" transparent={usesTransparentPass(opacity)} opacity={opacity} />
+            <Box args={[0.08, 0.08, 0.08]} position={[-length / 2, 0, 0]} castShadow receiveShadow renderOrder={renderOrder}>
+                <meshStandardMaterial color="#e8f3ff" {...getBlendMaterialProps(opacity)} />
             </Box>
-            <Box args={[0.08, 0.08, 0.08]} position={[length / 2, 0, 0]} castShadow receiveShadow renderOrder={RULER_RENDER_ORDER}>
-                <meshStandardMaterial color="#e8f3ff" transparent={usesTransparentPass(opacity)} opacity={opacity} />
+            <Box args={[0.08, 0.08, 0.08]} position={[length / 2, 0, 0]} castShadow receiveShadow renderOrder={renderOrder}>
+                <meshStandardMaterial color="#e8f3ff" {...getBlendMaterialProps(opacity)} />
             </Box>
         </group>
     );
@@ -1111,6 +1209,8 @@ function Stair3D({ stair, floor, targetFloor }: { stair: Stair; floor: Floor; ta
     const elevationDelta = targetFloor.elevation - floor.elevation;
     const layer = (floor.layerSettings || defaultLayerSettings).stairs;
     if (layer && !layer.visible) return null;
+    const opacity = layer?.opacity ?? 1;
+    const renderOrder = getFloorRenderBaseOrder(floor) + 24;
 
     if (Math.abs(elevationDelta) < 0.1) {
         return null;
@@ -1156,13 +1256,13 @@ function Stair3D({ stair, floor, targetFloor }: { stair: Stair; floor: Floor; ta
                     position={[0, elevationDelta / 2, 0]}
                     castShadow
                     receiveShadow
+                    renderOrder={renderOrder}
                 >
                     <meshStandardMaterial
                         color="#d8dee8"
                         roughness={0.45}
                         metalness={0.15}
-                        transparent={layer?.opacity !== undefined ? layer.opacity < 1 : false}
-                        opacity={layer?.opacity ?? 1}
+                        {...getBlendMaterialProps(opacity)}
                     />
                 </CylinderShape>
 
@@ -1184,13 +1284,13 @@ function Stair3D({ stair, floor, targetFloor }: { stair: Stair; floor: Floor; ta
                             rotation={[0, rotationY, 0]}
                             castShadow
                             receiveShadow
+                            renderOrder={renderOrder}
                         >
                             <meshStandardMaterial
                                 color={stair.color || '#ff9f68'}
                                 roughness={0.52}
                                 metalness={0.04}
-                                transparent={layer?.opacity !== undefined ? layer.opacity < 1 : false}
-                                opacity={layer?.opacity ?? 1}
+                                {...getBlendMaterialProps(opacity)}
                             />
                         </Box>
                     );
@@ -1230,12 +1330,11 @@ function Stair3D({ stair, floor, targetFloor }: { stair: Stair; floor: Floor; ta
                     : [crossLength, treadThickness, treadDepth];
 
                 return (
-                    <Box key={index} args={args} position={position} castShadow receiveShadow>
+                    <Box key={index} args={args} position={position} castShadow receiveShadow renderOrder={renderOrder}>
                         <meshStandardMaterial
                             color={stair.color || '#ffd166'}
                             roughness={0.55}
-                            transparent={layer?.opacity !== undefined ? layer.opacity < 1 : false}
-                            opacity={layer?.opacity ?? 1}
+                            {...getBlendMaterialProps(opacity)}
                         />
                     </Box>
                 );
