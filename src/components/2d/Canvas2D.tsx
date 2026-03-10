@@ -1569,9 +1569,12 @@ function PolygonRoomElement({
     distanceCandidates: Array<{ id: string; rect: Rect2D }>;
     setDistanceGuides: (guides: DistanceGuide[]) => void;
 }) {
-    const { interactMode, selectedElement, setSelectedElement, updateRoom } = useStore();
+    const { interactMode, selectedElement, setSelectedElement, updateRoom, floors } = useStore();
     const isSelected = selectedElement?.id === room.id;
     const roomPoints = room.points || [];
+    const floor = floors.find((f) => f.id === room.floorId);
+    const layer = (floor?.layerSettings || defaultLayerSettings).rooms;
+    if (!layer.visible) return null;
     const bind = useDrag(({ movement: [mx, my], first, memo }) => {
         if (interactMode !== 'select' || room.locked || roomPoints.length < 3) return memo;
         if (first || !memo) memo = { points: roomPoints.map((point) => ({ ...point })) };
@@ -1602,7 +1605,7 @@ function PolygonRoomElement({
     const bindProps: any = bind();
 
     return (
-        <g>
+        <g opacity={layer.opacity}>
             <polygon
                 {...bindProps}
                 onPointerDown={(e) => {
