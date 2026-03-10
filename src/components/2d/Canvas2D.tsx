@@ -16,6 +16,7 @@ import {
     type Rect2D
 } from '../../utils/buildingGeometry';
 import { getFurniturePreset } from '../../utils/furnitureCatalog';
+import { getReferenceRotatedSize, normalizeReferenceRotation } from '../../utils/referenceTransforms';
 import './Canvas2D.css';
 
 const GRID_SIZE = 50;
@@ -500,6 +501,20 @@ function ReferenceLayer({
     scale: number;
 }) {
     const { updateFloor } = useStore();
+    const [naturalSize, setNaturalSize] = useState({
+        width: reference.width || 0,
+        height: reference.height || 0
+    });
+    useEffect(() => {
+        setNaturalSize({
+            width: reference.width || 0,
+            height: reference.height || 0
+        });
+    }, [reference.height, reference.id, reference.width]);
+    const baseWidth = reference.width || naturalSize.width;
+    const baseHeight = reference.height || naturalSize.height;
+    const normalizedRotation = normalizeReferenceRotation(reference.rotation || 0);
+    const rotatedSize = getReferenceRotatedSize(baseWidth || 1, baseHeight || 1, normalizedRotation);
 
     const bind = useDrag(({ movement: [mx, my], first, memo }) => {
         if (reference.locked) return memo;
@@ -528,13 +543,35 @@ function ReferenceLayer({
                 left: reference.offsetX,
                 top: reference.offsetY,
                 opacity: reference.opacity,
-                transform: `scale(${reference.scale})`,
-                transformOrigin: 'top left',
+                width: Math.max(1, rotatedSize.width * (reference.scale || 1)),
+                height: Math.max(1, rotatedSize.height * (reference.scale || 1)),
                 pointerEvents: reference.locked ? 'none' : 'auto'
             }}
             onPointerDown={(e) => e.stopPropagation()}
         >
-            <img src={reference.src} alt={reference.name} className="reference-image" draggable={false} />
+            <img
+                src={reference.src}
+                alt={reference.name}
+                className="reference-image"
+                draggable={false}
+                onLoad={(event) => {
+                    const image = event.currentTarget;
+                    if (naturalSize.width !== image.naturalWidth || naturalSize.height !== image.naturalHeight) {
+                        setNaturalSize({
+                            width: image.naturalWidth,
+                            height: image.naturalHeight
+                        });
+                    }
+                }}
+                style={{
+                    width: baseWidth || undefined,
+                    height: baseHeight || undefined,
+                    left: '50%',
+                    top: '50%',
+                    transform: `translate(-50%, -50%) rotate(${normalizedRotation}deg) scale(${(reference.flipX ? -1 : 1) * (reference.scale || 1)}, ${(reference.flipY ? -1 : 1) * (reference.scale || 1)})`,
+                    transformOrigin: 'center center'
+                }}
+            />
         </div>
     );
 }

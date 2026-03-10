@@ -41,7 +41,7 @@ export default function Header() {
                     className={`header-undo-btn ${canUndo ? '' : 'disabled'}`}
                     onClick={undo}
                     disabled={!canUndo}
-                    title="Undo last change"
+                    title="Undo last change (Cmd/Ctrl + Z)"
                 >
                     <Undo2 size={16} />
                     Undo

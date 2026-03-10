@@ -35,6 +35,7 @@
 }
 
 .reference-image {
+    position: absolute;
     display: block;
     max-width: none;
     user-select: none;

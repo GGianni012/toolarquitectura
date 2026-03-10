@@ -13,7 +13,7 @@ type ClipboardPayload =
     | { type: 'furniture'; data: any };
 
 function App() {
-    const { mode, selectedElement, activeFloorId, rooms, furniture, addRoom, addFurniture, removeElement, setSelectedElement } = useStore();
+    const { mode, selectedElement, activeFloorId, rooms, furniture, addRoom, addFurniture, removeElement, setSelectedElement, undo, canUndo } = useStore();
     const clipboardRef = useRef<ClipboardPayload | null>(null);
 
     useEffect(() => {
@@ -36,6 +36,13 @@ function App() {
             }
 
             if (!(event.metaKey || event.ctrlKey)) {
+                return;
+            }
+
+            if (event.code === 'KeyZ' && !event.shiftKey) {
+                if (!canUndo) return;
+                event.preventDefault();
+                undo();
                 return;
             }
 
@@ -97,7 +104,7 @@ function App() {
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [activeFloorId, addFurniture, addRoom, furniture, removeElement, rooms, selectedElement, setSelectedElement]);
+    }, [activeFloorId, addFurniture, addRoom, canUndo, furniture, removeElement, rooms, selectedElement, setSelectedElement, undo]);
 
     return (
         <div className="app-container">

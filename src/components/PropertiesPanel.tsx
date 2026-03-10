@@ -4,6 +4,7 @@ import { useStore } from '../store/useStore';
 import { GripHorizontal, Lock, Unlock, X } from 'lucide-react';
 import { getRoomEdgeCount, getRoomEdgeLabel, isRoomWallVisible } from '../utils/buildingGeometry';
 import { getFurniturePreset } from '../utils/furnitureCatalog';
+import { normalizeReferenceRotation } from '../utils/referenceTransforms';
 import './PropertiesPanel.css';
 
 const PLAN_UNIT_IN_METERS = 0.5;
@@ -227,6 +228,52 @@ export default function PropertiesPanel() {
                                     value={activeFloor.reference.scale}
                                     onChange={(e) => updateReference({ scale: parseFloat(e.target.value) || 1 })}
                                 />
+                            </div>
+                            <div className="property-row">
+                                <label>Rotation</label>
+                                <div className="property-chip">
+                                    {normalizeReferenceRotation(activeFloor.reference.rotation || 0)}°
+                                </div>
+                            </div>
+                            <div className="property-row stacked">
+                                <label>Reference Transform</label>
+                                <div className="reference-transform-grid">
+                                    <button
+                                        type="button"
+                                        className="floor-choice-btn"
+                                        onClick={() => updateReference({ rotation: normalizeReferenceRotation((activeFloor.reference?.rotation || 0) - 90) })}
+                                    >
+                                        Rotate -90
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="floor-choice-btn"
+                                        onClick={() => updateReference({ rotation: normalizeReferenceRotation((activeFloor.reference?.rotation || 0) + 90) })}
+                                    >
+                                        Rotate +90
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={`floor-choice-btn ${activeFloor.reference.flipX ? 'active' : ''}`}
+                                        onClick={() => updateReference({ flipX: !activeFloor.reference?.flipX })}
+                                    >
+                                        Flip H
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={`floor-choice-btn ${activeFloor.reference.flipY ? 'active' : ''}`}
+                                        onClick={() => updateReference({ flipY: !activeFloor.reference?.flipY })}
+                                    >
+                                        Flip V
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="floor-choice-btn"
+                                        onClick={() => updateReference({ rotation: 0, flipX: false, flipY: false })}
+                                    >
+                                        Reset
+                                    </button>
+                                </div>
                             </div>
                             <div className="property-row">
                                 <label>Offset X</label>

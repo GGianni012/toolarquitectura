@@ -1,4 +1,5 @@
 import type { FloorReference, Room, Wall } from '../store/useStore';
+import { drawTransformedReferenceImage } from './referenceTransforms';
 
 const GRID_SIZE = 50;
 const ANALYSIS_MAX_SIZE = 280;
@@ -300,9 +301,27 @@ export async function autoTraceReference(
     options?: { wallHeight?: number }
 ): Promise<TraceResult> {
     const image = await loadImage(reference.src);
-    const scaleRatio = Math.min(ANALYSIS_MAX_SIZE / Math.max(image.naturalWidth, image.naturalHeight), 1);
-    const width = Math.max(32, Math.round(image.naturalWidth * scaleRatio));
-    const height = Math.max(32, Math.round(image.naturalHeight * scaleRatio));
+    const transformedCanvas = document.createElement('canvas');
+    const transformedContext = transformedCanvas.getContext('2d');
+
+    if (!transformedContext) {
+        throw new Error('Canvas 2D context is not available for transformed tracing');
+    }
+
+    const transformedSize = drawTransformedReferenceImage(
+        transformedContext,
+        image,
+        image.naturalWidth,
+        image.naturalHeight,
+        {
+            rotation: reference.rotation,
+            flipX: reference.flipX,
+            flipY: reference.flipY
+        }
+    );
+    const scaleRatio = Math.min(ANALYSIS_MAX_SIZE / Math.max(transformedSize.width, transformedSize.height), 1);
+    const width = Math.max(32, Math.round(transformedSize.width * scaleRatio));
+    const height = Math.max(32, Math.round(transformedSize.height * scaleRatio));
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d', { willReadFrequently: true });
 
@@ -312,7 +331,7 @@ export async function autoTraceReference(
 
     canvas.width = width;
     canvas.height = height;
-    context.drawImage(image, 0, 0, width, height);
+    context.drawImage(transformedCanvas, 0, 0, width, height);
 
     const imageData = context.getImageData(0, 0, width, height);
     const grayscale = new Uint8Array(width * height);
@@ -344,8 +363,8 @@ export async function autoTraceReference(
     const verticalRuns = detectVerticalRuns(wallMask, width, height, Math.max(14, Math.round(height * 0.08)));
     const horizontalBands = mergeRunsIntoBands(horizontalRuns);
     const verticalBands = mergeRunsIntoBands(verticalRuns);
-    const scaleX = image.naturalWidth / width;
-    const scaleY = image.naturalHeight / height;
+    const scaleX = transformedSize.width / width;
+    const scaleY = transformedSize.height / height;
     const toWorldX = (pixelX: number) => roundUnit((reference.offsetX + (pixelX * scaleX * reference.scale)) / GRID_SIZE);
     const toWorldY = (pixelY: number) => roundUnit((reference.offsetY + (pixelY * scaleY * reference.scale)) / GRID_SIZE);
 

@@ -53,11 +53,16 @@ export interface FloorReference {
     name: string;
     src: string;
     kind: 'image' | 'pdf';
+    width?: number;
+    height?: number;
     opacity: number;
     scale: number;
     offsetX: number;
     offsetY: number;
     locked: boolean;
+    rotation?: number;
+    flipX?: boolean;
+    flipY?: boolean;
 }
 
 export interface PositionedElement extends BaseElement {
